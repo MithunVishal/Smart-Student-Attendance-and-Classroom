@@ -1,0 +1,11 @@
+services:
+  - type: web
+    name: smart-student-attendance
+    runtime: docker
+    plan: free
+    region: oregon
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_DEBUG
+        value: "False"

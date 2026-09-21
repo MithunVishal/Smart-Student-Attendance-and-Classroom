@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Records - Iris Attendance{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Attendance Audit Records</h3>
+    <p class="text-muted small mb-0">Complete historical and real-time logs with IN time, OUT time, and classroom duration.</p>
+  </div>
+
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('export_report', format_type='excel', report_type='daily', start_date=selected_date, end_date=selected_date, department=selected_dept) }}" class="btn btn-outline-success btn-sm rounded-pill px-3 shadow-sm fw-semibold">
+      <i class="bi bi-file-earmark-excel me-1"></i>Excel
+    </a>
+    <a href="{{ url_for('export_report', format_type='pdf', report_type='daily', start_date=selected_date, end_date=selected_date, department=selected_dept) }}" class="btn btn-outline-danger btn-sm rounded-pill px-3 shadow-sm fw-semibold">
+      <i class="bi bi-file-earmark-pdf me-1"></i>PDF
+    </a>
+    <a href="{{ url_for('export_report', format_type='csv', report_type='daily', start_date=selected_date, end_date=selected_date, department=selected_dept) }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm fw-semibold">
+      <i class="bi bi-filetype-csv me-1"></i>CSV
+    </a>
+  </div>
+</div>
+
+<!-- Search & Filtering Bar -->
+<div class="iris-card mb-4">
+  <form method="GET" action="{{ url_for('attendance') }}" class="row g-2 align-items-center">
+    <!-- Date Filter -->
+    <div class="col-md-3">
+      <div class="input-group">
+        <span class="input-group-text bg-light border-end-0"><i class="bi bi-calendar3 text-muted"></i></span>
+        <input type="date" name="date" class="form-control border-start-0" value="{{ selected_date }}" onchange="this.form.submit()">
+      </div>
+    </div>
+
+    <!-- Search input -->
+    <div class="col-md-3">
+      <div class="input-group">
+        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" name="search" class="form-control border-start-0" placeholder="Search name or reg no..." value="{{ search }}">
+      </div>
+    </div>
+
+    <!-- Department filter -->
+    <div class="col-md-3">
+      <select name="department" class="form-select" onchange="this.form.submit()">
+        <option value="All" {% if selected_dept == 'All' %}selected{% endif %}>All Departments</option>
+        <option value="Computer Science" {% if selected_dept == 'Computer Science' %}selected{% endif %}>Computer Science</option>
+        <option value="Information Technology" {% if selected_dept == 'Information Technology' %}selected{% endif %}>Information Technology</option>
+        <option value="Electronics & Comm." {% if selected_dept == 'Electronics & Comm.' %}selected{% endif %}>Electronics & Comm.</option>
+        <option value="Mechanical Eng." {% if selected_dept == 'Mechanical Eng.' %}selected{% endif %}>Mechanical Eng.</option>
+        <option value="Civil Engineering" {% if selected_dept == 'Civil Engineering' %}selected{% endif %}>Civil Engineering</option>
+      </select>
+    </div>
+
+    <!-- Status filter -->
+    <div class="col-md-2">
+      <select name="status" class="form-select" onchange="this.form.submit()">
+        <option value="All" {% if selected_status == 'All' %}selected{% endif %}>All Statuses</option>
+        <option value="Inside" {% if selected_status == 'Inside' %}selected{% endif %}>Inside (Active)</option>
+        <option value="Exited" {% if selected_status == 'Exited' %}selected{% endif %}>Exited (Completed)</option>
+      </select>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="col-md-1 d-flex gap-1">
+      <button type="submit" class="btn btn-primary w-100" title="Apply Filters"><i class="bi bi-funnel-fill"></i></button>
+      {% if search or selected_dept != 'All' or selected_status != 'All' or selected_date != today_date %}
+        <a href="{{ url_for('attendance') }}" class="btn btn-light border" title="Reset Filters"><i class="bi bi-arrow-counterclockwise"></i></a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Attendance Logs Table -->
+<div class="iris-card">
+  <div class="iris-card-header">
+    <h6 class="iris-card-title">
+      <i class="bi bi-table text-primary"></i>Attendance Records ({{ records | length }})
+    </h6>
+    <span class="badge bg-light text-muted border">Filtered Results</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="iris-table">
+      <thead>
+        <tr>
+          <th style="width: 50px;">Photo</th>
+          <th>Student Name</th>
+          <th>Register No</th>
+          <th>Department</th>
+          <th>Year / Sec</th>
+          <th>Date</th>
+          <th>IN Time</th>
+          <th>OUT Time</th>
+          <th>Duration</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if records %}
+          {% for r in records %}
+          <tr>
+            <td>
+              <img src="{{ url_for('static', filename=r.photo_path) }}" class="table-student-avatar" alt="{{ r.student_name }}">
+            </td>
+            <td>
+              <div class="fw-bold text-dark">{{ r.student_name }}</div>
+              <div class="small text-muted">{{ r.barcode_id }}</div>
+            </td>
+            <td><code>{{ r.register_number }}</code></td>
+            <td><span class="badge bg-light text-dark border">{{ r.department }}</span></td>
+            <td>{{ r.year }} &bull; Sec {{ r.section }}</td>
+            <td><span class="text-muted small">{{ r.date }}</span></td>
+            <td><span class="fw-semibold text-dark">{{ r.in_time }}</span></td>
+            <td>{{ r.out_time or '<span class="text-muted">-</span>' | safe }}</td>
+            <td>
+              <span class="fw-bold text-primary">{{ r.duration_formatted or '0s' }}</span>
+            </td>
+            <td>
+              {% if r.status == 'Inside' %}
+                <span class="badge-inside"><span class="pulse-dot green"></span>Inside</span>
+              {% else %}
+                <span class="badge-exited"><i class="bi bi-check2-circle"></i>Exited</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="10" class="text-center py-5 text-muted">
+              <i class="bi bi-calendar-x fs-1 d-block mb-2 text-secondary"></i>
+              No attendance records match your search criteria.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,326 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Smart Student Attendance System{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Attendance & Classroom Utilization Dashboard</h3>
+    <p class="text-muted small mb-0">Real-time attendance telemetry, occupancy analytics, and student flow.</p>
+  </div>
+  
+  <!-- Date Selector & Quick Action -->
+  <div class="d-flex align-items-center gap-2">
+    <form method="GET" action="{{ url_for('dashboard') }}" class="d-flex align-items-center gap-2">
+      <div class="input-group input-group-sm">
+        <span class="input-group-text bg-white border-end-0"><i class="bi bi-calendar-event text-primary"></i></span>
+        <input type="date" name="date" class="form-control form-control-sm border-start-0" value="{{ selected_date }}" onchange="this.form.submit()">
+      </div>
+    </form>
+    <a href="{{ url_for('scanner') }}" class="btn btn-primary btn-sm rounded-3 d-flex align-items-center gap-2 px-3 py-2 fw-semibold shadow-sm">
+      <i class="bi bi-camera-video-fill"></i>
+      <span>Launch Scanner</span>
+    </a>
+  </div>
+</div>
+
+<!-- 6 Core KPI Metrics -->
+<div class="row g-3 mb-4">
+  <!-- 1. Total Students -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card blue h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Total Students</div>
+          <div class="kpi-value">{{ stats.total_students }}</div>
+        </div>
+        <div class="kpi-icon blue"><i class="bi bi-people-fill"></i></div>
+      </div>
+      <div class="small text-muted mt-2"><i class="bi bi-database me-1"></i>Enrolled Database</div>
+    </div>
+  </div>
+
+  <!-- 2. Present Students -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card green h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Present Today</div>
+          <div class="kpi-value text-success">{{ stats.present_students }}</div>
+        </div>
+        <div class="kpi-icon green"><i class="bi bi-person-check-fill"></i></div>
+      </div>
+      <div class="small text-muted mt-2"><i class="bi bi-check2-circle text-success me-1"></i>Recorded IN scans</div>
+    </div>
+  </div>
+
+  <!-- 3. Absent Students -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card amber h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Absent Students</div>
+          <div class="kpi-value text-warning">{{ stats.absent_students }}</div>
+        </div>
+        <div class="kpi-icon amber"><i class="bi bi-person-x-fill"></i></div>
+      </div>
+      <div class="small text-muted mt-2"><i class="bi bi-exclamation-circle text-warning me-1"></i>No scan recorded</div>
+    </div>
+  </div>
+
+  <!-- 4. Students Currently Inside -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card indigo h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Currently Inside</div>
+          <div class="kpi-value text-indigo">{{ stats.students_inside }}</div>
+        </div>
+        <div class="kpi-icon indigo"><i class="bi bi-door-open-fill"></i></div>
+      </div>
+      <div class="small text-muted mt-2 d-flex align-items-center gap-1">
+        <span class="pulse-dot green"></span>
+        <span>Active in classroom</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. Students Exited -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card teal h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Students Exited</div>
+          <div class="kpi-value text-teal">{{ stats.students_exited }}</div>
+        </div>
+        <div class="kpi-icon teal"><i class="bi bi-box-arrow-right"></i></div>
+      </div>
+      <div class="small text-muted mt-2"><i class="bi bi-clock-history me-1"></i>Checked OUT</div>
+    </div>
+  </div>
+
+  <!-- 6. Daily Attendance % -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="kpi-card purple h-100">
+      <div class="d-flex justify-content-between align-items-start">
+        <div>
+          <div class="kpi-label">Daily Attendance</div>
+          <div class="kpi-value text-purple">{{ stats.attendance_percentage }}%</div>
+        </div>
+        <div class="kpi-icon purple"><i class="bi bi-pie-chart-fill"></i></div>
+      </div>
+      <div class="small text-muted mt-2"><i class="bi bi-graph-up-arrow text-primary me-1"></i>Turnout rate</div>
+    </div>
+  </div>
+</div>
+
+<!-- Classroom Utilization Row -->
+<div class="row g-3 mb-4">
+  <div class="col-lg-12">
+    <div class="iris-card">
+      <div class="d-flex flex-column flex-sm-row justify-content-between align-items-sm-center gap-2 mb-3">
+        <div>
+          <h5 class="fw-bold text-dark mb-0">
+            <i class="bi bi-building text-primary me-2"></i>{{ stats.classroom_name }} &bull; Live Capacity Utilization
+          </h5>
+          <span class="text-muted small">Max seating capacity: {{ stats.classroom_capacity }} students</span>
+        </div>
+        <div class="d-flex align-items-center gap-3">
+          <span class="fs-4 fw-bold text-primary">{{ stats.students_inside }} <small class="fs-6 text-muted fw-normal">/ {{ stats.classroom_capacity }} Seats</small></span>
+          <span class="badge bg-primary px-3 py-2 fs-6 rounded-pill">{{ stats.occupancy_percentage }}% Utilized</span>
+        </div>
+      </div>
+
+      <!-- Capacity Progress Bar -->
+      <div class="progress" style="height: 14px; border-radius: 8px;">
+        <div class="progress-bar {% if stats.occupancy_percentage > 85 %}bg-danger{% elif stats.occupancy_percentage > 60 %}bg-warning{% else %}bg-primary{% endif %} progress-bar-striped progress-bar-animated"
+             role="progressbar" 
+             style="width: {{ stats.occupancy_percentage }}%"></div>
+      </div>
+
+      <div class="d-flex justify-content-between text-muted small mt-2">
+        <span>0 (Empty)</span>
+        <span>Optimal Band (40% - 75%)</span>
+        <span>{{ stats.classroom_capacity }} (Full Capacity)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Analytics Charts Row -->
+<div class="row g-3 mb-4">
+  <!-- Chart 1: Department Attendance Breakdown -->
+  <div class="col-lg-5">
+    <div class="iris-card h-100">
+      <div class="iris-card-header">
+        <h6 class="iris-card-title"><i class="bi bi-pie-chart-fill text-primary"></i>Department Breakdown</h6>
+        <span class="badge bg-light text-muted border">Today</span>
+      </div>
+      <div style="height: 250px; position: relative;">
+        <canvas id="deptChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Chart 2: Hourly Traffic Trend -->
+  <div class="col-lg-7">
+    <div class="iris-card h-100">
+      <div class="iris-card-header">
+        <h6 class="iris-card-title"><i class="bi bi-graph-up text-primary"></i>Hourly Check-in Flow</h6>
+        <span class="badge bg-light text-muted border">Classroom Traffic</span>
+      </div>
+      <div style="height: 250px; position: relative;">
+        <canvas id="trafficChart"></canvas>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Recent Scans Live Activity Table -->
+<div class="iris-card">
+  <div class="iris-card-header">
+    <h6 class="iris-card-title">
+      <i class="bi bi-clock-history text-primary"></i>Recent Attendance Activity
+      <span class="pulse-dot green ms-2"></span>
+    </h6>
+    <div class="d-flex gap-2">
+      <a href="{{ url_for('attendance') }}" class="btn btn-outline-primary btn-sm rounded-pill px-3">
+        View All Records <i class="bi bi-arrow-right ms-1"></i>
+      </a>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="iris-table">
+      <thead>
+        <tr>
+          <th style="width: 60px;">Photo</th>
+          <th>Student Name</th>
+          <th>Reg Number</th>
+          <th>Department</th>
+          <th>IN Time</th>
+          <th>OUT Time</th>
+          <th>Duration</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if stats.recent_scans %}
+          {% for r in stats.recent_scans %}
+          <tr>
+            <td>
+              <img src="{{ url_for('static', filename=r.photo_path) }}" class="table-student-avatar" alt="{{ r.student_name }}">
+            </td>
+            <td>
+              <div class="fw-bold text-dark">{{ r.student_name }}</div>
+              <div class="small text-muted">{{ r.barcode_id }}</div>
+            </td>
+            <td><code>{{ r.register_number }}</code></td>
+            <td><span class="badge bg-light text-dark border">{{ r.department }}</span></td>
+            <td><span class="fw-semibold text-dark">{{ r.in_time }}</span></td>
+            <td>{{ r.out_time or '<span class="text-muted">-</span>' | safe }}</td>
+            <td><span class="fw-semibold text-primary">{{ r.duration_formatted or '0s' }}</span></td>
+            <td>
+              {% if r.status == 'Inside' %}
+                <span class="badge-inside"><span class="pulse-dot green"></span>Inside</span>
+              {% else %}
+                <span class="badge-exited"><i class="bi bi-check2-circle"></i>Exited</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">
+              <i class="bi bi-inbox fs-2 d-block mb-1"></i>
+              No attendance activity recorded for this date yet.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Chart 1: Department Attendance Breakdown
+  const deptData = {{ stats.department_stats | tojson }};
+  const deptLabels = Object.keys(deptData);
+  const deptCounts = Object.values(deptData);
+
+  const ctxDept = document.getElementById('deptChart');
+  if (ctxDept) {
+    new Chart(ctxDept, {
+      type: 'doughnut',
+      data: {
+        labels: deptLabels.length ? deptLabels : ['No Data'],
+        datasets: [{
+          data: deptCounts.length ? deptCounts : [1],
+          backgroundColor: [
+            '#2563eb', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#06b6d4', '#64748b'
+          ],
+          borderWidth: 2,
+          borderColor: '#ffffff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'bottom',
+            labels: { boxWidth: 12, font: { family: 'Inter', size: 11 } }
+          }
+        },
+        cutout: '68%'
+      }
+    });
+  }
+
+  // Chart 2: Hourly Traffic Flow
+  const trafficData = {{ stats.hourly_traffic | tojson }};
+  const hoursLabels = ['08:00', '09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00'];
+  const hourlyValues = hoursLabels.map(h => trafficData[h] || 0);
+
+  const ctxTraffic = document.getElementById('trafficChart');
+  if (ctxTraffic) {
+    new Chart(ctxTraffic, {
+      type: 'line',
+      data: {
+        labels: hoursLabels,
+        datasets: [{
+          label: 'Student Check-ins',
+          data: hourlyValues,
+          borderColor: '#2563eb',
+          backgroundColor: 'rgba(37, 99, 235, 0.12)',
+          fill: true,
+          tension: 0.35,
+          pointBackgroundColor: '#2563eb',
+          pointRadius: 4,
+          pointHoverRadius: 6
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            ticks: { precision: 0, font: { family: 'Inter', size: 10 } },
+            grid: { color: '#f1f5f9' }
+          },
+          x: {
+            ticks: { font: { family: 'Inter', size: 10 } },
+            grid: { display: false }
+          }
+        }
+      }
+    });
+  }
+</script>
+{% endblock %}

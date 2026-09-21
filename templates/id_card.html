@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+
+{% block title %}Student ID Card - {{ student.student_name }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4 no-print">
+  <div>
+    <a href="{{ url_for('students') }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 mb-2">
+      <i class="bi bi-arrow-left me-1"></i>Back to Students
+    </a>
+    <h3 class="fw-bold text-dark mb-0">Official Student Identification Badge</h3>
+  </div>
+
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('static', filename='barcodes/' + student.barcode_id + '.png') }}" download="{{ student.barcode_id }}_barcode.png" class="btn btn-outline-primary btn-sm rounded-pill px-3 shadow-sm">
+      <i class="bi bi-download me-1"></i>Download Barcode
+    </a>
+    <button onclick="window.print()" class="btn btn-primary btn-sm rounded-pill px-4 shadow-sm fw-semibold">
+      <i class="bi bi-printer-fill me-1"></i>Print ID Card
+    </button>
+  </div>
+</div>
+
+<div class="row justify-content-center">
+  <div class="col-auto">
+    <!-- Printable Student ID Card Badge -->
+    <div class="id-card-container">
+      <!-- Card Header -->
+      <div class="id-card-header">
+        <div class="d-flex align-items-center gap-2">
+          <i class="bi bi-mortarboard-fill fs-4 text-warning"></i>
+          <div>
+            <div class="fw-bold small" style="letter-spacing: 0.05em; line-height: 1.1;">INSTITUTE OF TECHNOLOGY</div>
+            <div style="font-size: 0.65rem; opacity: 0.85;">STUDENT IDENTIFICATION PASS</div>
+          </div>
+        </div>
+        <span class="badge bg-warning text-dark fw-bold rounded-pill" style="font-size: 0.65rem;">VALID 2026</span>
+      </div>
+
+      <!-- Card Body -->
+      <div class="d-flex gap-3 align-items-center mb-2">
+        <img src="{{ url_for('static', filename=student.photo_path) }}" class="id-card-photo" alt="{{ student.student_name }}">
+        
+        <div style="flex-grow: 1; min-width: 0;">
+          <h5 class="fw-bold mb-0 text-truncate" style="font-size: 1.05rem;">{{ student.student_name }}</h5>
+          <div class="small fw-semibold text-warning" style="font-size: 0.8rem;">REG: {{ student.register_number }}</div>
+          <div style="font-size: 0.72rem; opacity: 0.9;" class="text-truncate">{{ student.department }}</div>
+          <div style="font-size: 0.7rem; opacity: 0.85;">{{ student.year }} &bull; Sec {{ student.section }}</div>
+        </div>
+      </div>
+
+      <!-- Card Footer Barcode -->
+      <div class="text-center mt-2">
+        <img src="{{ url_for('static', filename='barcodes/' + student.barcode_id + '.png') }}" class="id-card-barcode-img" alt="Scannable Barcode">
+      </div>
+    </div>
+
+    <!-- Testing Advice Card -->
+    <div class="iris-card mt-4 no-print text-center" style="max-width: 380px;">
+      <h6 class="fw-bold text-dark"><i class="bi bi-camera text-primary me-2"></i>Testing with Camera?</h6>
+      <p class="text-muted small mb-3">
+        You can hold your smartphone displaying this ID card or print it out and point it at the <strong>Live Barcode Scanner</strong> to test real-time recognition.
+      </p>
+      <a href="{{ url_for('scanner') }}" class="btn btn-outline-primary btn-sm rounded-pill w-100 fw-semibold">
+        Go to Scanner <i class="bi bi-arrow-right ms-1"></i>
+      </a>
+    </div>
+  </div>
+</div>
+{% endblock %}

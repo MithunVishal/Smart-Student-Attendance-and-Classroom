@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Login - Smart Attendance System{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center align-items-center" style="min-height: 75vh;">
+  <div class="col-md-6 col-lg-4">
+    <div class="card border-0 shadow-lg rounded-4 overflow-hidden">
+      <!-- Card Header Banner -->
+      <div class="p-4 text-center text-white" style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);">
+        <div class="bg-white text-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3 shadow" style="width: 64px; height: 64px;">
+          <i class="bi bi-upc-scan fs-2 text-primary"></i>
+        </div>
+        <h4 class="fw-bold mb-1">Iris Attendance</h4>
+        <p class="small mb-0 opacity-75">Classroom Utilization & Real-Time Barcode System</p>
+      </div>
+
+      <!-- Login Form Body -->
+      <div class="card-body p-4 p-md-5">
+        <form method="POST" action="{{ url_for('login') }}">
+          <div class="mb-3">
+            <label class="form-label fw-semibold text-secondary small">ADMIN USERNAME</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light border-end-0"><i class="bi bi-person text-muted"></i></span>
+              <input type="text" name="username" id="loginUsername" class="form-control bg-light border-start-0" placeholder="admin" required autofocus>
+            </div>
+          </div>
+
+          <div class="mb-4">
+            <label class="form-label fw-semibold text-secondary small">PASSWORD</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light border-end-0"><i class="bi bi-lock text-muted"></i></span>
+              <input type="password" name="password" id="loginPassword" class="form-control bg-light border-start-0" placeholder="••••••••" required>
+            </div>
+          </div>
+
+          <button type="submit" class="btn btn-primary w-100 py-2 rounded-3 fw-bold shadow-sm d-flex align-items-center justify-content-center gap-2">
+            <i class="bi bi-box-arrow-in-right fs-5"></i>
+            <span>Sign In to Dashboard</span>
+          </button>
+        </form>
+
+        <!-- Quick Demo Credentials Box -->
+        <div class="mt-4 p-3 bg-light rounded-3 border">
+          <div class="d-flex align-items-center justify-content-between mb-2">
+            <span class="small fw-bold text-primary"><i class="bi bi-key-fill me-1"></i>Demo Credentials</span>
+            <button type="button" class="btn btn-link btn-sm p-0 text-decoration-none fw-bold" onclick="fillDemoCreds()">Auto-Fill</button>
+          </div>
+          <div class="small text-muted d-flex justify-content-between">
+            <span>Username: <strong class="text-dark">admin</strong></span>
+            <span>Password: <strong class="text-dark">admin123</strong></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function fillDemoCreds() {
+    document.getElementById('loginUsername').value = 'admin';
+    document.getElementById('loginPassword').value = 'admin123';
+  }
+</script>
+{% endblock %}

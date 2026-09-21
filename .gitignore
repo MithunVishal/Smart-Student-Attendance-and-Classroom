@@ -1,0 +1,25 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Database lock / temp files
+instance/*.db-journal
+
+# Temporary generated reports cache
+static/generated_reports/*.xlsx
+static/generated_reports/*.pdf
+static/generated_reports/*.csv
+
+# Editor / OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

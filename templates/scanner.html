@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{% block title %}Real-Time Camera Barcode Scanner - Iris{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">
+      <i class="bi bi-camera-video-fill text-danger me-2"></i>Real-Time Barcode Scanner
+    </h3>
+    <p class="text-muted small mb-0">
+      Point student ID card barcode towards camera. System detects and logs attendance automatically.
+    </p>
+  </div>
+
+  <div class="d-flex align-items-center gap-2">
+    <!-- Camera selector dropdown -->
+    <select id="cameraSelect" class="form-select form-select-sm rounded-pill shadow-sm" style="max-width: 220px;">
+      <option value="">Detecting cameras...</option>
+    </select>
+
+    <button id="btnToggleCamera" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-1 shadow-sm d-flex align-items-center gap-2">
+      <i class="bi bi-pause-circle"></i>
+      <span>Pause Camera</span>
+    </button>
+  </div>
+</div>
+
+<!-- Alert for Camera Permissions if blocked -->
+<div id="cameraErrorAlert" class="alert alert-danger d-none shadow-sm border-0 mb-4" role="alert"></div>
+
+<div class="row g-4">
+  <!-- Left Column: Camera Viewport -->
+  <div class="col-lg-7">
+    <div class="iris-card p-3">
+      <!-- Camera Status Header -->
+      <div class="d-flex justify-content-between align-items-center mb-2 px-1">
+        <div class="d-flex align-items-center gap-2">
+          <span class="pulse-dot green"></span>
+          <span class="small fw-bold text-dark">Live Video Stream</span>
+          <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 rounded-pill" style="font-size: 0.7rem;">OpenCV &bull; Pyzbar Active</span>
+        </div>
+        <div class="small text-muted">
+          <i class="bi bi-lightbulb-fill text-warning me-1"></i>Low-Light CLAHE Enabled
+        </div>
+      </div>
+
+      <!-- Video Feed Container -->
+      <div class="scanner-viewport-wrapper">
+        <video id="scannerVideo" class="scanner-video" autoplay playsinline muted></video>
+        <canvas id="scannerCanvas" class="scanner-overlay-canvas"></canvas>
+
+        <!-- Scanning Reticle with Corner Brackets & Laser Sweep -->
+        <div class="scanner-reticle">
+          <div class="reticle-corner reticle-tl"></div>
+          <div class="reticle-corner reticle-tr"></div>
+          <div class="reticle-corner reticle-bl"></div>
+          <div class="reticle-corner reticle-br"></div>
+          <div class="scanner-laser"></div>
+        </div>
+      </div>
+
+      <!-- Instructions & Lighting Advice -->
+      <div class="mt-3 p-2 bg-light rounded-3 d-flex align-items-center justify-content-between text-muted small px-3">
+        <span><i class="bi bi-info-circle text-primary me-1"></i>Hold ID card steady within the reticle. Barcodes are detected in <strong>under 200ms</strong>.</span>
+        <a href="{{ url_for('id_cards_gallery') }}" target="_blank" class="fw-bold text-primary text-decoration-none">
+          Open Printable ID Cards <i class="bi bi-box-arrow-up-right ms-1"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Right Column: Student Information Display Card -->
+  <div class="col-lg-5">
+    <div class="iris-card h-100 d-flex flex-column justify-content-between">
+      <div class="iris-card-header">
+        <h6 class="iris-card-title">
+          <i class="bi bi-person-badge-fill text-primary"></i>Student Verification Card
+        </h6>
+        <span class="badge bg-light text-muted border" id="scanLiveStatus">Real-time Feed</span>
+      </div>
+
+      <!-- Empty State before scanning -->
+      <div id="emptyScanState" class="text-center py-5 my-auto">
+        <div class="bg-primary bg-opacity-10 text-primary rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 80px; height: 80px;">
+          <i class="bi bi-upc-scan fs-1"></i>
+        </div>
+        <h5 class="fw-bold text-dark">Ready for ID Card Scan</h5>
+        <p class="text-muted small px-4 mb-3">
+          Present any student ID card with a barcode before the camera. The system will detect, verify, and mark attendance automatically.
+        </p>
+        <span class="badge bg-light text-muted border px-3 py-2 rounded-pill">
+          <i class="bi bi-shield-check text-success me-1"></i>Duplicate flutter prevention active
+        </span>
+      </div>
+
+      <!-- Active Student Display Card -->
+      <div id="studentDisplayCard" class="student-display-card d-none">
+        <div class="d-flex align-items-center gap-3 mb-3">
+          <!-- Student Photo -->
+          <img id="studentPhoto" src="" class="student-avatar-lg" alt="Student Photo">
+
+          <div>
+            <h4 class="fw-bold text-dark mb-1" id="studentName">--</h4>
+            <div class="d-flex flex-wrap gap-2 align-items-center mb-2">
+              <span class="badge bg-primary rounded-pill px-2 py-1" id="studentRegNo">--</span>
+              <span class="badge bg-light text-dark border rounded-pill px-2 py-1" id="studentBarcodeId">--</span>
+            </div>
+            <div class="small text-muted fw-semibold" id="studentDept">--</div>
+            <div class="small text-muted" id="studentYearSec">--</div>
+          </div>
+        </div>
+
+        <hr class="my-3 text-muted opacity-25">
+
+        <!-- Date & Time Row -->
+        <div class="row g-2 text-center mb-2">
+          <div class="col-6">
+            <div class="p-2 bg-light rounded-3">
+              <div class="small text-muted" style="font-size: 0.72rem;">SCAN DATE</div>
+              <div class="fw-bold text-dark" id="scanDate">--</div>
+            </div>
+          </div>
+          <div class="col-6">
+            <div class="p-2 bg-light rounded-3">
+              <div class="small text-muted" style="font-size: 0.72rem;">SCAN TIME</div>
+              <div class="fw-bold text-dark" id="scanTime">--</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Action Status Banner (Check IN or Check OUT) -->
+        <div id="actionStatusBanner" class="action-status-banner check-in">
+          <div>
+            <div id="actionStatusText" class="d-flex align-items-center gap-2">
+              <i class="bi bi-box-arrow-in-right fs-5"></i>
+              <span>CHECKED IN (Present)</span>
+            </div>
+            <div class="small opacity-75 mt-1" id="actionTimeDetails">IN Time: --:--:--</div>
+          </div>
+          <span id="durationBadge" class="badge bg-primary text-white rounded-pill px-3 py-2 d-none">
+            Duration: --
+          </span>
+        </div>
+      </div>
+
+      <!-- Quick Room Counter -->
+      <div class="mt-4 p-3 bg-light rounded-3 border d-flex justify-content-between align-items-center">
+        <div>
+          <span class="small fw-bold text-dark d-block">Room 402 Occupancy</span>
+          <span class="small text-muted">Smart Computing Lab</span>
+        </div>
+        <div class="text-end">
+          <span class="fs-4 fw-bold text-primary" id="liveOccupancyCount">{{ stats.students_inside }}</span>
+          <span class="text-muted small">/ {{ stats.classroom_capacity }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Live Activity Stream Table below Camera -->
+<div class="row mt-4">
+  <div class="col-12">
+    <div class="iris-card">
+      <div class="iris-card-header">
+        <h6 class="iris-card-title">
+          <i class="bi bi-broadcast text-danger me-2"></i>Live Stream Activity Feed
+          <span class="pulse-dot green ms-2"></span>
+        </h6>
+        <span class="badge bg-light text-muted border">Auto-Updated per Scan</span>
+      </div>
+
+      <div class="table-responsive">
+        <table class="iris-table">
+          <thead>
+            <tr>
+              <th style="width: 50px;">Photo</th>
+              <th>Student Name</th>
+              <th>Department</th>
+              <th>IN Time</th>
+              <th>OUT Time</th>
+              <th>Duration</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="recentScansTbody">
+            {% if stats.recent_scans %}
+              {% for r in stats.recent_scans %}
+              <tr>
+                <td>
+                  <img src="{{ url_for('static', filename=r.photo_path) }}" class="table-student-avatar" alt="Avatar">
+                </td>
+                <td>
+                  <div class="fw-bold text-dark">{{ r.student_name }}</div>
+                  <div class="small text-muted">{{ r.register_number }}</div>
+                </td>
+                <td><span class="badge bg-light text-dark border">{{ r.department }}</span></td>
+                <td><span class="fw-semibold">{{ r.in_time }}</span></td>
+                <td>{{ r.out_time or '<span class="text-muted">-</span>' | safe }}</td>
+                <td><span class="fw-semibold text-primary">{{ r.duration_formatted or '0s' }}</span></td>
+                <td>
+                  {% if r.status == 'Inside' %}
+                    <span class="badge-inside"><span class="pulse-dot green"></span>Inside</span>
+                  {% else %}
+                    <span class="badge-exited"><i class="bi bi-check2-circle"></i>Exited</span>
+                  {% endif %}
+                </td>
+              </tr>
+              {% endfor %}
+            {% endif %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/scanner.js') }}"></script>
+{% endblock %}

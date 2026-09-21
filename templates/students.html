@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block title %}Student Database - Iris Attendance{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Student Management & Registry</h3>
+    <p class="text-muted small mb-0">Enrolled student profiles, photographic database, and individual barcode IDs.</p>
+  </div>
+
+  <div class="d-flex align-items-center gap-2">
+    <a href="{{ url_for('id_cards_gallery') }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-2 fw-semibold shadow-sm">
+      <i class="bi bi-person-badge-fill me-1"></i>All Printable ID Badges
+    </a>
+    <button class="btn btn-primary btn-sm rounded-pill px-3 py-2 fw-semibold shadow-sm d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addStudentModal">
+      <i class="bi bi-person-plus-fill"></i>
+      <span>Add New Student</span>
+    </button>
+  </div>
+</div>
+
+<!-- Search & Department Filters -->
+<div class="iris-card mb-4">
+  <form method="GET" action="{{ url_for('students') }}" class="row g-2 align-items-center">
+    <div class="col-md-5">
+      <div class="input-group">
+        <span class="input-group-text bg-light border-end-0"><i class="bi bi-search text-muted"></i></span>
+        <input type="text" name="search" class="form-control border-start-0" placeholder="Search by name, register number, or barcode ID..." value="{{ search }}">
+      </div>
+    </div>
+
+    <div class="col-md-4">
+      <select name="department" class="form-select" onchange="this.form.submit()">
+        <option value="All" {% if selected_dept == 'All' %}selected{% endif %}>All Departments</option>
+        <option value="Computer Science" {% if selected_dept == 'Computer Science' %}selected{% endif %}>Computer Science</option>
+        <option value="Information Technology" {% if selected_dept == 'Information Technology' %}selected{% endif %}>Information Technology</option>
+        <option value="Electronics & Comm." {% if selected_dept == 'Electronics & Comm.' %}selected{% endif %}>Electronics & Comm.</option>
+        <option value="Mechanical Eng." {% if selected_dept == 'Mechanical Eng.' %}selected{% endif %}>Mechanical Eng.</option>
+        <option value="Civil Engineering" {% if selected_dept == 'Civil Engineering' %}selected{% endif %}>Civil Engineering</option>
+      </select>
+    </div>
+
+    <div class="col-md-3 d-flex gap-2">
+      <button type="submit" class="btn btn-primary w-100 fw-semibold">Filter</button>
+      {% if search or selected_dept != 'All' %}
+        <a href="{{ url_for('students') }}" class="btn btn-light border" title="Clear Filters"><i class="bi bi-x-lg"></i></a>
+      {% endif %}
+    </div>
+  </form>
+</div>
+
+<!-- Student Directory Table -->
+<div class="iris-card">
+  <div class="iris-card-header">
+    <h6 class="iris-card-title"><i class="bi bi-people-fill text-primary"></i>Enrolled Students ({{ students | length }})</h6>
+    <span class="badge bg-light text-muted border">Class of 2026</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="iris-table">
+      <thead>
+        <tr>
+          <th style="width: 50px;">Photo</th>
+          <th>Register No</th>
+          <th>Student Name</th>
+          <th>Department</th>
+          <th>Year & Section</th>
+          <th>Barcode ID</th>
+          <th>Barcode Scannable</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if students %}
+          {% for s in students %}
+          <tr>
+            <td>
+              <img src="{{ url_for('static', filename=s.photo_path) }}" class="table-student-avatar" alt="{{ s.student_name }}">
+            </td>
+            <td><code class="fw-bold text-dark">{{ s.register_number }}</code></td>
+            <td>
+              <div class="fw-bold text-dark">{{ s.student_name }}</div>
+            </td>
+            <td><span class="badge bg-light text-dark border">{{ s.department }}</span></td>
+            <td>{{ s.year }} &bull; Sec {{ s.section }}</td>
+            <td><span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">{{ s.barcode_id }}</span></td>
+            <td>
+              <a href="{{ url_for('static', filename='barcodes/' + s.barcode_id + '.png') }}" target="_blank" title="Click to view barcode image">
+                <img src="{{ url_for('static', filename='barcodes/' + s.barcode_id + '.png') }}" alt="Barcode" style="height: 30px; max-width: 110px; object-fit: contain;">
+              </a>
+            </td>
+            <td class="text-end">
+              <div class="btn-group btn-group-sm">
+                <a href="{{ url_for('student_id_card', student_id=s.id) }}" class="btn btn-outline-primary" title="Print/View ID Badge" target="_blank">
+                  <i class="bi bi-person-badge"></i> ID Card
+                </a>
+                <button type="button" class="btn btn-outline-secondary" title="Edit Student" onclick="openEditModal({{ s | tojson }})">
+                  <i class="bi bi-pencil"></i>
+                </button>
+                <button type="button" class="btn btn-outline-danger" title="Delete Student" onclick="confirmDelete({{ s.id }}, '{{ s.student_name }}')">
+                  <i class="bi bi-trash"></i>
+                </button>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="8" class="text-center py-4 text-muted">
+              <i class="bi bi-person-x fs-2 d-block mb-1"></i>
+              No students found matching your search.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- Modal: Add Student -->
+<div class="modal fade" id="addStudentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header bg-primary text-white">
+        <h5 class="modal-title fw-bold"><i class="bi bi-person-plus-fill me-2"></i>Add New Student</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form method="POST" action="{{ url_for('students') }}" enctype="multipart/form-data">
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">STUDENT FULL NAME *</label>
+            <input type="text" name="student_name" class="form-control" placeholder="e.g. Rahul Dev" required>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
+              <input type="text" name="register_number" class="form-control" placeholder="e.g. 2026CS110" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">BARCODE ID (Optional)</label>
+              <input type="text" name="barcode_id" class="form-control" placeholder="Auto-generated if empty">
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">DEPARTMENT *</label>
+            <select name="department" class="form-select" required>
+              <option value="Computer Science">Computer Science</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Electronics & Comm.">Electronics & Comm.</option>
+              <option value="Mechanical Eng.">Mechanical Eng.</option>
+              <option value="Civil Engineering">Civil Engineering</option>
+            </select>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">YEAR *</label>
+              <select name="year" class="form-select" required>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year" selected>3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">SECTION *</label>
+              <input type="text" name="section" class="form-control" placeholder="e.g. A" value="A" required>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-semibold small text-secondary">STUDENT PHOTO (Optional)</label>
+            <input type="file" name="photo" class="form-control" accept="image/*">
+            <div class="form-text small">Leave blank to auto-generate a color-coded avatar badge.</div>
+          </div>
+        </div>
+
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold">Save & Generate Barcode</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Edit Student -->
+<div class="modal fade" id="editStudentModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg rounded-4">
+      <div class="modal-header bg-secondary text-white">
+        <h5 class="modal-title fw-bold"><i class="bi bi-pencil-square me-2"></i>Edit Student Details</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <form id="editStudentForm" method="POST" action="" enctype="multipart/form-data">
+        <div class="modal-body p-4">
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">STUDENT FULL NAME *</label>
+            <input type="text" id="editName" name="student_name" class="form-control" required>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
+              <input type="text" id="editRegNo" name="register_number" class="form-control" required>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">BARCODE ID *</label>
+              <input type="text" id="editBarcodeId" name="barcode_id" class="form-control" required>
+            </div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">DEPARTMENT *</label>
+            <select id="editDept" name="department" class="form-select" required>
+              <option value="Computer Science">Computer Science</option>
+              <option value="Information Technology">Information Technology</option>
+              <option value="Electronics & Comm.">Electronics & Comm.</option>
+              <option value="Mechanical Eng.">Mechanical Eng.</option>
+              <option value="Civil Engineering">Civil Engineering</option>
+            </select>
+          </div>
+
+          <div class="row g-2 mb-3">
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">YEAR *</label>
+              <select id="editYear" name="year" class="form-select" required>
+                <option value="1st Year">1st Year</option>
+                <option value="2nd Year">2nd Year</option>
+                <option value="3rd Year">3rd Year</option>
+                <option value="4th Year">4th Year</option>
+              </select>
+            </div>
+            <div class="col-md-6">
+              <label class="form-label fw-semibold small text-secondary">SECTION *</label>
+              <input type="text" id="editSection" name="section" class="form-control" required>
+            </div>
+          </div>
+
+          <div class="mb-2">
+            <label class="form-label fw-semibold small text-secondary">UPDATE PHOTO (Optional)</label>
+            <input type="file" name="photo" class="form-control" accept="image/*">
+          </div>
+        </div>
+
+        <div class="modal-footer bg-light">
+          <button type="button" class="btn btn-secondary rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold">Update Student</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- Modal: Delete Confirmation -->
+<form id="deleteForm" method="POST" action="">
+  <div class="modal fade" id="deleteModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-sm">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-body p-4 text-center">
+          <div class="bg-danger bg-opacity-10 text-danger rounded-circle d-inline-flex align-items-center justify-content-center mb-3" style="width: 56px; height: 56px;">
+            <i class="bi bi-exclamation-triangle-fill fs-3"></i>
+          </div>
+          <h5 class="fw-bold text-dark">Confirm Deletion</h5>
+          <p class="text-muted small mb-3">
+            Are you sure you want to delete <strong id="deleteStudentName"></strong>? All attendance history for this student will be removed.
+          </p>
+          <div class="d-flex gap-2 justify-content-center">
+            <button type="button" class="btn btn-light border rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-danger rounded-pill px-3 fw-bold">Delete</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  function openEditModal(student) {
+    document.getElementById('editStudentForm').action = `/students/edit/${student.id}`;
+    document.getElementById('editName').value = student.student_name;
+    document.getElementById('editRegNo').value = student.register_number;
+    document.getElementById('editBarcodeId').value = student.barcode_id;
+    document.getElementById('editDept').value = student.department;
+    document.getElementById('editYear').value = student.year;
+    document.getElementById('editSection').value = student.section;
+    
+    new bootstrap.Modal(document.getElementById('editStudentModal')).show();
+  }
+
+  function confirmDelete(studentId, studentName) {
+    document.getElementById('deleteForm').action = `/students/delete/${studentId}`;
+    document.getElementById('deleteStudentName').textContent = studentName;
+    new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  }
+</script>
+{% endblock %}

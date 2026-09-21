@@ -1,0 +1,175 @@
+{% extends "base.html" %}
+
+{% block title %}Attendance Reports - Iris Attendance{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <h3 class="fw-bold text-dark mb-1">Attendance Reports & Exports</h3>
+    <p class="text-muted small mb-0">Aggregate attendance performance, duration analysis, and executive exports.</p>
+  </div>
+
+  <!-- Export Buttons -->
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('export_report', format_type='excel', report_type=report_type, start_date=start_date, end_date=end_date, department=selected_dept) }}" class="btn btn-success btn-sm rounded-pill px-3 shadow-sm fw-semibold d-flex align-items-center gap-2">
+      <i class="bi bi-file-earmark-excel-fill"></i>
+      <span>Export Excel (.xlsx)</span>
+    </a>
+    <a href="{{ url_for('export_report', format_type='pdf', report_type=report_type, start_date=start_date, end_date=end_date, department=selected_dept) }}" class="btn btn-danger btn-sm rounded-pill px-3 shadow-sm fw-semibold d-flex align-items-center gap-2">
+      <i class="bi bi-file-earmark-pdf-fill"></i>
+      <span>Export PDF</span>
+    </a>
+    <a href="{{ url_for('export_report', format_type='csv', report_type=report_type, start_date=start_date, end_date=end_date, department=selected_dept) }}" class="btn btn-outline-secondary btn-sm rounded-pill px-3 shadow-sm fw-semibold d-flex align-items-center gap-2">
+      <i class="bi bi-filetype-csv"></i>
+      <span>Export CSV</span>
+    </a>
+  </div>
+</div>
+
+<!-- Report Controls Card -->
+<div class="iris-card mb-4">
+  <form method="GET" action="{{ url_for('reports') }}" class="row g-3 align-items-end">
+    <!-- Period Type Tabs/Pills -->
+    <div class="col-md-4">
+      <label class="form-label small fw-bold text-secondary">REPORT FREQUENCY</label>
+      <div class="btn-group w-100" role="group">
+        <a href="{{ url_for('reports', report_type='daily', department=selected_dept) }}" class="btn btn-sm {% if report_type == 'daily' %}btn-primary fw-bold{% else %}btn-outline-primary{% endif %}">
+          Daily Report
+        </a>
+        <a href="{{ url_for('reports', report_type='weekly', department=selected_dept) }}" class="btn btn-sm {% if report_type == 'weekly' %}btn-primary fw-bold{% else %}btn-outline-primary{% endif %}">
+          Weekly (7 Days)
+        </a>
+        <a href="{{ url_for('reports', report_type='monthly', department=selected_dept) }}" class="btn btn-sm {% if report_type == 'monthly' %}btn-primary fw-bold{% else %}btn-outline-primary{% endif %}">
+          Monthly (30 Days)
+        </a>
+      </div>
+      <input type="hidden" name="report_type" value="{{ report_type }}">
+    </div>
+
+    <!-- Date selector (for daily report) -->
+    {% if report_type == 'daily' %}
+    <div class="col-md-3">
+      <label class="form-label small fw-bold text-secondary">SELECT DATE</label>
+      <input type="date" name="date" class="form-control form-control-sm" value="{{ start_date }}" onchange="this.form.submit()">
+    </div>
+    {% else %}
+    <div class="col-md-3">
+      <label class="form-label small fw-bold text-secondary">CURRENT DATE WINDOW</label>
+      <div class="form-control form-control-sm bg-light text-muted">{{ date_label }}</div>
+    </div>
+    {% endif %}
+
+    <!-- Department Filter -->
+    <div class="col-md-3">
+      <label class="form-label small fw-bold text-secondary">DEPARTMENT FILTER</label>
+      <select name="department" class="form-select form-select-sm" onchange="this.form.submit()">
+        <option value="All" {% if selected_dept == 'All' %}selected{% endif %}>All Departments</option>
+        <option value="Computer Science" {% if selected_dept == 'Computer Science' %}selected{% endif %}>Computer Science</option>
+        <option value="Information Technology" {% if selected_dept == 'Information Technology' %}selected{% endif %}>Information Technology</option>
+        <option value="Electronics & Comm." {% if selected_dept == 'Electronics & Comm.' %}selected{% endif %}>Electronics & Comm.</option>
+        <option value="Mechanical Eng." {% if selected_dept == 'Mechanical Eng.' %}selected{% endif %}>Mechanical Eng.</option>
+        <option value="Civil Engineering" {% if selected_dept == 'Civil Engineering' %}selected{% endif %}>Civil Engineering</option>
+      </select>
+    </div>
+
+    <div class="col-md-2">
+      <button type="submit" class="btn btn-primary btn-sm w-100 fw-semibold">Generate Report</button>
+    </div>
+  </form>
+</div>
+
+<!-- Report Summary Metrics -->
+<div class="row g-3 mb-4">
+  <div class="col-sm-6 col-lg-3">
+    <div class="iris-card p-3">
+      <div class="text-muted small fw-bold text-uppercase">Total Sessions</div>
+      <div class="fs-2 fw-bold text-dark">{{ summary.total_sessions }}</div>
+      <span class="small text-muted">Attendance check-ins</span>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="iris-card p-3">
+      <div class="text-muted small fw-bold text-uppercase">Unique Students</div>
+      <div class="fs-2 fw-bold text-primary">{{ summary.unique_students }}</div>
+      <span class="small text-muted">Distinct individuals</span>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="iris-card p-3">
+      <div class="text-muted small fw-bold text-uppercase">Exited Sessions</div>
+      <div class="fs-2 fw-bold text-success">{{ summary.exited_count }}</div>
+      <span class="small text-muted">Completed sessions</span>
+    </div>
+  </div>
+
+  <div class="col-sm-6 col-lg-3">
+    <div class="iris-card p-3">
+      <div class="text-muted small fw-bold text-uppercase">Avg Classroom Duration</div>
+      <div class="fs-2 fw-bold text-indigo">{{ summary.avg_duration_min }} <small class="fs-6 fw-normal">min</small></div>
+      <span class="small text-muted">Per student session</span>
+    </div>
+  </div>
+</div>
+
+<!-- Report Data Preview -->
+<div class="iris-card">
+  <div class="iris-card-header">
+    <h6 class="iris-card-title">
+      <i class="bi bi-file-earmark-text text-primary"></i>Report Preview &bull; {{ date_label }} ({{ records | length }} Records)
+    </h6>
+    <span class="badge bg-light text-muted border">{{ report_type | capitalize }} Report</span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="iris-table">
+      <thead>
+        <tr>
+          <th>Register No</th>
+          <th>Student Name</th>
+          <th>Department</th>
+          <th>Year / Sec</th>
+          <th>Date</th>
+          <th>IN Time</th>
+          <th>OUT Time</th>
+          <th>Duration</th>
+          <th>Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% if records %}
+          {% for r in records %}
+          <tr>
+            <td><code>{{ r.register_number }}</code></td>
+            <td>
+              <div class="fw-bold text-dark">{{ r.student_name }}</div>
+            </td>
+            <td><span class="badge bg-light text-dark border">{{ r.department }}</span></td>
+            <td>{{ r.year }} &bull; Sec {{ r.section }}</td>
+            <td><span class="text-muted small">{{ r.date }}</span></td>
+            <td><span class="fw-semibold text-dark">{{ r.in_time }}</span></td>
+            <td>{{ r.out_time or '<span class="text-muted">-</span>' | safe }}</td>
+            <td><span class="fw-bold text-primary">{{ r.duration_formatted or '0s' }}</span></td>
+            <td>
+              {% if r.status == 'Inside' %}
+                <span class="badge-inside"><span class="pulse-dot green"></span>Inside</span>
+              {% else %}
+                <span class="badge-exited"><i class="bi bi-check2-circle"></i>Exited</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="9" class="text-center py-5 text-muted">
+              <i class="bi bi-inbox fs-2 d-block mb-1"></i>
+              No attendance data found for the selected period and department.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
