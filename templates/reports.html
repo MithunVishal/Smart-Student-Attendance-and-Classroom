@@ -64,6 +64,7 @@
       <label class="form-label small fw-bold text-secondary">DEPARTMENT FILTER</label>
       <select name="department" class="form-select form-select-sm" onchange="this.form.submit()">
         <option value="All" {% if selected_dept == 'All' %}selected{% endif %}>All Departments</option>
+        <option value="Artificial Intelligence and Data Science" {% if selected_dept == 'Artificial Intelligence and Data Science' %}selected{% endif %}>Artificial Intelligence and Data Science</option>
         <option value="Computer Science" {% if selected_dept == 'Computer Science' %}selected{% endif %}>Computer Science</option>
         <option value="Information Technology" {% if selected_dept == 'Information Technology' %}selected{% endif %}>Information Technology</option>
         <option value="Electronics & Comm." {% if selected_dept == 'Electronics & Comm.' %}selected{% endif %}>Electronics & Comm.</option>

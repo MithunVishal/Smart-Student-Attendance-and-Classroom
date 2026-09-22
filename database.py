@@ -4,7 +4,6 @@ from datetime import datetime, date, timedelta
 from werkzeug.security import generate_password_hash, check_password_hash
 from PIL import Image, ImageDraw, ImageFont
 from config import Config
-from barcode_gen import get_or_create_barcode_image
 
 def get_db_connection():
     """Returns a connection to the SQLite database with row_factory set to sqlite3.Row."""
@@ -16,7 +15,7 @@ def get_db_connection():
 def format_duration(seconds: int) -> str:
     """Formats a duration in seconds into human-readable string like '1h 24m' or '45m 10s'."""
     if seconds is None or seconds < 0:
-        return "0m"
+        return "0s"
     hours = seconds // 3600
     minutes = (seconds % 3600) // 60
     rem_seconds = seconds % 60
@@ -31,7 +30,7 @@ def format_duration(seconds: int) -> str:
     return " ".join(parts)
 
 def init_db():
-    """Initializes the database schema and seeds initial data if empty."""
+    """Initializes the database schema and ensures all required columns exist."""
     conn = get_db_connection()
     cursor = conn.cursor()
     
@@ -58,9 +57,17 @@ def init_db():
         section TEXT NOT NULL,
         photo_path TEXT,
         barcode_id TEXT UNIQUE NOT NULL,
+        barcode_image_path TEXT,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
+    
+    # Check if barcode_image_path column exists in older database
+    try:
+        cursor.execute("ALTER TABLE students ADD COLUMN barcode_image_path TEXT")
+        conn.commit()
+    except Exception:
+        pass
     
     # 3. Attendance table
     cursor.execute("""
@@ -89,10 +96,23 @@ def init_db():
         )
         conn.commit()
         
+    # Link barcode images for existing students if not set
+    cursor.execute("SELECT id, barcode_id, student_name FROM students WHERE barcode_image_path IS NULL OR barcode_image_path = ''")
+    for s in cursor.fetchall():
+        bid = s['barcode_id']
+        name = s['student_name'].lower()
+        possible_imgs = [f"barcodes/{bid}.png", f"barcodes/{bid}.jpg", f"barcodes/{bid}.jpeg"]
+        for f in os.listdir(Config.BARCODE_FOLDER):
+            if name in f.lower() or bid.lower() in f.lower():
+                possible_imgs.insert(0, f"barcodes/{f}")
+        for img in possible_imgs:
+            if os.path.exists(os.path.join(Config.STATIC_DIR, img)):
+                cursor.execute("UPDATE students SET barcode_image_path = ? WHERE id = ?", (img, s['id']))
+                break
+    conn.commit()
     conn.close()
-    seed_initial_data()
 
-def create_sample_avatar(name: str, bg_color: tuple, text_color: tuple = (255, 255, 255)) -> str:
+def create_sample_avatar(name: str, bg_color: tuple = (30, 64, 175), text_color: tuple = (255, 255, 255)) -> str:
     """Generates an initial avatar image if custom photo is not provided."""
     filename = f"avatar_{name.lower().replace(' ', '_')}.png"
     filepath = os.path.join(Config.AVATARS_FOLDER, filename)
@@ -103,7 +123,6 @@ def create_sample_avatar(name: str, bg_color: tuple, text_color: tuple = (255, 2
     img = Image.new('RGB', size, color=bg_color)
     draw = ImageDraw.Draw(img)
     
-    # Get initials
     initials = "".join([part[0].upper() for part in name.split()[:2]])
     if not initials:
         initials = "ST"
@@ -113,7 +132,6 @@ def create_sample_avatar(name: str, bg_color: tuple, text_color: tuple = (255, 2
     except Exception:
         font = ImageFont.load_default()
         
-    # Center text
     bbox = draw.textbbox((0, 0), initials, font=font)
     w = bbox[2] - bbox[0]
     h = bbox[3] - bbox[1]
@@ -124,92 +142,20 @@ def create_sample_avatar(name: str, bg_color: tuple, text_color: tuple = (255, 2
     img.save(filepath)
     return f"uploads/avatars/{filename}"
 
-def seed_initial_data():
-    """Seeds realistic sample students, barcodes, and attendance logs for demonstration."""
-    conn = get_db_connection()
-    cursor = conn.cursor()
-    
-    cursor.execute("SELECT COUNT(*) as count FROM students")
-    count = cursor.fetchone()['count']
-    
-    if count == 0:
-        sample_students = [
-            ("Aarav Sharma", "2026CS101", "Computer Science", "3rd Year", "A", "STU2026001", (26, 86, 219)),
-            ("Ananya Patel", "2026CS102", "Computer Science", "3rd Year", "A", "STU2026002", (15, 118, 110)),
-            ("Rohan Verma", "2026IT201", "Information Technology", "2nd Year", "B", "STU2026003", (180, 83, 9)),
-            ("Sneha Nair", "2026EC301", "Electronics & Comm.", "4th Year", "A", "STU2026004", (109, 40, 217)),
-            ("Vikram Aditya", "2026CS103", "Computer Science", "3rd Year", "B", "STU2026005", (190, 24, 93)),
-            ("Kavya Sundaram", "2026ME401", "Mechanical Eng.", "1st Year", "A", "STU2026006", (3, 105, 161)),
-            ("Priya Ramanathan", "2026IT202", "Information Technology", "2nd Year", "A", "STU2026007", (67, 56, 202)),
-            ("Karthik Raja", "2026CV501", "Civil Engineering", "4th Year", "B", "STU2026008", (55, 65, 81))
-        ]
-        
-        today_str = date.today().strftime('%Y-%m-%d')
-        now = datetime.now()
-        
-        for name, reg_no, dept, year, sec, barcode_id, color in sample_students:
-            # 1. Create avatar
-            photo_path = create_sample_avatar(name, color)
-            
-            # 2. Generate Barcode PNG
-            get_or_create_barcode_image(barcode_id)
-            
-            # 3. Insert student
-            cursor.execute("""
-            INSERT INTO students (student_name, register_number, department, year, section, photo_path, barcode_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """, (name, reg_no, dept, year, sec, photo_path, barcode_id))
-            student_id = cursor.lastrowid
-            
-            # 4. Seed realistic today attendance for first 4 students
-            if barcode_id == "STU2026001":
-                # Currently inside
-                in_time = (now - timedelta(minutes=45)).strftime('%H:%M:%S')
-                cursor.execute("""
-                INSERT INTO attendance (student_id, date, in_time, out_time, duration_seconds, duration_formatted, status)
-                VALUES (?, ?, ?, NULL, 0, '0s', 'Inside')
-                """, (student_id, today_str, in_time))
-            elif barcode_id == "STU2026002":
-                # Completed session (exited)
-                in_time = (now - timedelta(hours=2, minutes=10)).strftime('%H:%M:%S')
-                out_time = (now - timedelta(minutes=35)).strftime('%H:%M:%S')
-                dur_secs = 95 * 60
-                cursor.execute("""
-                INSERT INTO attendance (student_id, date, in_time, out_time, duration_seconds, duration_formatted, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'Exited')
-                """, (student_id, today_str, in_time, out_time, dur_secs, format_duration(dur_secs)))
-            elif barcode_id == "STU2026003":
-                # Currently inside
-                in_time = (now - timedelta(minutes=20)).strftime('%H:%M:%S')
-                cursor.execute("""
-                INSERT INTO attendance (student_id, date, in_time, out_time, duration_seconds, duration_formatted, status)
-                VALUES (?, ?, ?, NULL, 0, '0s', 'Inside')
-                """, (student_id, today_str, in_time))
-            elif barcode_id == "STU2026004":
-                # Completed session (exited)
-                in_time = (now - timedelta(hours=1, minutes=40)).strftime('%H:%M:%S')
-                out_time = (now - timedelta(minutes=15)).strftime('%H:%M:%S')
-                dur_secs = 85 * 60
-                cursor.execute("""
-                INSERT INTO attendance (student_id, date, in_time, out_time, duration_seconds, duration_formatted, status)
-                VALUES (?, ?, ?, ?, ?, ?, 'Exited')
-                """, (student_id, today_str, in_time, out_time, dur_secs, format_duration(dur_secs)))
-                
-        conn.commit()
-        
-    conn.close()
-
 def get_student_by_barcode(barcode_id: str):
-    """Fetches a student by their unique barcode_id."""
+    """Fetches a student by their unique barcode_id (case-insensitive & trimmed)."""
     conn = get_db_connection()
-    student = conn.execute("SELECT * FROM students WHERE barcode_id = ?", (barcode_id,)).fetchone()
+    clean_id = barcode_id.strip()
+    student = conn.execute(
+        "SELECT * FROM students WHERE UPPER(barcode_id) = UPPER(?)", (clean_id,)
+    ).fetchone()
     conn.close()
     return dict(student) if student else None
 
 def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
     """
-    Core attendance engine:
-    - Decodes barcode and matches student.
+    Core attendance scan engine:
+    - Scans and matches student by exact barcode number.
     - If student is currently Inside (active session today):
       - Checks cooldown.
       - If cooldown passed: marks OUT time, calculates duration, updates status to 'Exited'.
@@ -221,20 +167,21 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         
     today_str = scan_time.strftime('%Y-%m-%d')
     time_str = scan_time.strftime('%H:%M:%S')
+    clean_barcode = barcode_id.strip()
     
     conn = get_db_connection()
     cursor = conn.cursor()
     
-    # 1. Match student
-    cursor.execute("SELECT * FROM students WHERE barcode_id = ?", (barcode_id,))
+    # 1. Match student by barcode
+    cursor.execute("SELECT * FROM students WHERE UPPER(barcode_id) = UPPER(?)", (clean_barcode,))
     student_row = cursor.fetchone()
     
     if not student_row:
         conn.close()
         return {
             'status': 'not_found',
-            'barcode_id': barcode_id,
-            'message': f"Barcode '{barcode_id}' is detected, but not registered in the student database."
+            'barcode_id': clean_barcode,
+            'message': f"Barcode '{clean_barcode}' was scanned, but is not registered in the student database."
         }
         
     student = dict(student_row)
@@ -253,7 +200,6 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         record_id = active_record['id']
         in_time_str = active_record['in_time']
         
-        # Calculate duration
         try:
             in_datetime = datetime.strptime(f"{today_str} {in_time_str}", '%Y-%m-%d %H:%M:%S')
             duration_secs = int((scan_time - in_datetime).total_seconds())
@@ -267,7 +213,7 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
             return {
                 'status': 'cooldown',
                 'action': 'COOLDOWN',
-                'barcode_id': barcode_id,
+                'barcode_id': clean_barcode,
                 'student': student,
                 'message': f"Already checked IN! Please wait {remaining}s before checking OUT.",
                 'remaining_seconds': remaining
@@ -282,7 +228,6 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         """, (time_str, duration_secs, duration_formatted, record_id))
         conn.commit()
         
-        # Fetch updated record
         cursor.execute("SELECT * FROM attendance WHERE id = ?", (record_id,))
         updated_record = dict(cursor.fetchone())
         conn.close()
@@ -290,10 +235,10 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         return {
             'status': 'success',
             'action': 'CHECK_OUT',
-            'barcode_id': barcode_id,
+            'barcode_id': clean_barcode,
             'student': student,
             'attendance': updated_record,
-            'message': f"Check-OUT Successful! Goodbye, {student['student_name']}. Total Duration: {duration_formatted}."
+            'message': f"Check-OUT Successful! {student['student_name']} (Barcode: {clean_barcode}) checked OUT at {time_str}. Duration: {duration_formatted}."
         }
         
     else:
@@ -312,14 +257,14 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         return {
             'status': 'success',
             'action': 'CHECK_IN',
-            'barcode_id': barcode_id,
+            'barcode_id': clean_barcode,
             'student': student,
             'attendance': new_record,
-            'message': f"Check-IN Successful! Welcome, {student['student_name']}. Recorded IN Time: {time_str}."
+            'message': f"Check-IN Successful! {student['student_name']} (Barcode: {clean_barcode}) checked IN at {time_str}."
         }
 
 def get_dashboard_stats(target_date: str = None):
-    """Aggregates all 6 core dashboard metrics, charts data, and live recent activity."""
+    """Aggregates attendance metrics, charts data, and live recent activity."""
     if target_date is None:
         target_date = date.today().strftime('%Y-%m-%d')
         
@@ -341,7 +286,7 @@ def get_dashboard_stats(target_date: str = None):
     cursor.execute("SELECT COUNT(*) as inside FROM attendance WHERE date = ? AND status = 'Inside'", (target_date,))
     students_inside = cursor.fetchone()['inside']
     
-    # 5. Students Exited Today (Students who have checked out and are not currently inside)
+    # 5. Students Exited Today
     cursor.execute("""
     SELECT COUNT(DISTINCT a.student_id) as exited
     FROM attendance a
@@ -355,10 +300,6 @@ def get_dashboard_stats(target_date: str = None):
     # 6. Daily Attendance Percentage
     attendance_pct = round((present_students / total_students * 100), 1) if total_students > 0 else 0.0
     
-    # Classroom Occupancy Percentage
-    capacity = Config.CLASSROOM_CAPACITY
-    occupancy_pct = round((students_inside / capacity * 100), 1) if capacity > 0 else 0.0
-    
     # Department Breakdown
     cursor.execute("""
     SELECT s.department, COUNT(DISTINCT s.id) as count
@@ -370,7 +311,7 @@ def get_dashboard_stats(target_date: str = None):
     dept_rows = cursor.fetchall()
     department_stats = {row['department']: row['count'] for row in dept_rows}
     
-    # Hourly Traffic (Distribution of IN checkins across 24 hours)
+    # Hourly Traffic
     cursor.execute("""
     SELECT substr(in_time, 1, 2) as hour, COUNT(*) as count
     FROM attendance
@@ -402,9 +343,6 @@ def get_dashboard_stats(target_date: str = None):
         'students_inside': students_inside,
         'students_exited': students_exited,
         'attendance_percentage': attendance_pct,
-        'classroom_name': Config.CLASSROOM_NAME,
-        'classroom_capacity': capacity,
-        'occupancy_percentage': occupancy_pct,
         'department_stats': department_stats,
         'hourly_traffic': hourly_traffic,
         'recent_scans': recent_scans

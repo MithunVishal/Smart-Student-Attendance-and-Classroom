@@ -26,6 +26,7 @@ class BarcodeScannerEngine {
     this.durationBadge = document.getElementById('durationBadge');
     this.cameraSelect = document.getElementById('cameraSelect');
     this.btnToggleCamera = document.getElementById('btnToggleCamera');
+    this.btnFlipCamera = document.getElementById('btnFlipCamera');
     this.liveOccupancyCount = document.getElementById('liveOccupancyCount');
     this.recentScansTbody = document.getElementById('recentScansTbody');
     
@@ -33,6 +34,7 @@ class BarcodeScannerEngine {
     this.isScanning = false;
     this.isProcessingFrame = false;
     this.currentDeviceId = null;
+    this.currentFacingMode = 'environment'; // Default to rear camera on mobile
     this.scanIntervalMs = 220; // High responsiveness (approx 4.5 FPS payload)
     
     // Offscreen capture canvas
@@ -143,12 +145,24 @@ class BarcodeScannerEngine {
         if (this.isScanning) {
           this.stopCamera();
         } else {
-          this.startCamera(this.currentDeviceId);
+          this.startCamera(this.currentDeviceId, this.currentFacingMode);
         }
+      });
+    }
+
+    if (this.btnFlipCamera) {
+      this.btnFlipCamera.addEventListener('click', () => {
+        // Toggle front/rear camera
+        this.currentFacingMode = (this.currentFacingMode === 'environment') ? 'user' : 'environment';
+        this.currentDeviceId = null; // Clear specific device ID so facingMode takes precedence
+        this.startCamera(null, this.currentFacingMode);
       });
     }
     
     window.addEventListener('resize', () => this.syncCanvasDimensions());
+    window.addEventListener('orientationchange', () => {
+      setTimeout(() => this.syncCanvasDimensions(), 250);
+    });
   }
 
   syncCanvasDimensions() {
@@ -157,14 +171,16 @@ class BarcodeScannerEngine {
     this.canvas.height = this.video.clientHeight || 480;
   }
 
-  async startCamera(deviceId = null) {
+  async startCamera(deviceId = null, facingMode = null) {
     this.stopCamera();
+    
+    const targetFacing = facingMode || this.currentFacingMode || 'environment';
     
     const constraints = {
       video: {
         width: { ideal: 1280 },
         height: { ideal: 720 },
-        facingMode: deviceId ? undefined : { ideal: 'environment' }
+        facingMode: deviceId ? undefined : { ideal: targetFacing }
       },
       audio: false
     };
@@ -180,13 +196,29 @@ class BarcodeScannerEngine {
       
       this.isScanning = true;
       if (this.btnToggleCamera) {
-        this.btnToggleCamera.innerHTML = '<i class="bi bi-pause-circle"></i> Pause Camera';
+        this.btnToggleCamera.innerHTML = '<i class="bi bi-pause-circle"></i> Pause';
         this.btnToggleCamera.classList.replace('btn-primary', 'btn-outline-primary');
       }
       
       this.syncCanvasDimensions();
       this.startScanningLoop();
     } catch (err) {
+      // Fallback without exact constraints if mobile browser is strict
+      if (constraints.video.facingMode) {
+        try {
+          delete constraints.video.width;
+          delete constraints.video.height;
+          this.stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          this.video.srcObject = this.stream;
+          await this.video.play();
+          this.isScanning = true;
+          this.syncCanvasDimensions();
+          this.startScanningLoop();
+          return;
+        } catch (fallbackErr) {
+          err = fallbackErr;
+        }
+      }
       console.error("Unable to access camera:", err);
       const errBox = document.getElementById('cameraErrorAlert');
       if (errBox) {
@@ -368,7 +400,9 @@ class BarcodeScannerEngine {
     if (this.studentRegNo) this.studentRegNo.textContent = student.register_number;
     if (this.studentDept) this.studentDept.textContent = student.department;
     if (this.studentYearSec) this.studentYearSec.textContent = `${student.year} • Section ${student.section}`;
-    if (this.studentBarcodeId) this.studentBarcodeId.textContent = student.barcode_id;
+    if (this.studentBarcodeId) {
+      this.studentBarcodeId.textContent = result.decoded_barcode_id || student.barcode_id || '--';
+    }
     
     const now = new Date();
     if (this.scanDate) {
@@ -424,19 +458,21 @@ class BarcodeScannerEngine {
     if (this.emptyState) this.emptyState.classList.add('d-none');
     if (this.studentCard) this.studentCard.classList.remove('d-none');
     
-    if (this.studentName) this.studentName.textContent = "Unregistered Barcode";
-    if (this.studentRegNo) this.studentRegNo.textContent = result.barcode_id || "N/A";
-    if (this.studentDept) this.studentDept.textContent = "Unknown Department";
-    if (this.studentYearSec) this.studentYearSec.textContent = "Please add student to database";
+    const scannedCode = result.decoded_barcode_id || result.barcode_id || 'Unknown';
+    if (this.studentBarcodeId) this.studentBarcodeId.textContent = scannedCode;
+    if (this.studentName) this.studentName.textContent = "Unregistered ID Card";
+    if (this.studentRegNo) this.studentRegNo.textContent = `Scanned: ${scannedCode}`;
+    if (this.studentDept) this.studentDept.textContent = "Barcode detected, but student not in database";
+    if (this.studentYearSec) this.studentYearSec.textContent = "Add student in Student Directory";
     
     if (this.statusBanner) {
       this.statusBanner.className = 'action-status-banner cooldown';
     }
     if (this.statusText) {
-      this.statusText.innerHTML = `<i class="bi bi-exclamation-triangle fs-5"></i> <span>NOT REGISTERED</span>`;
+      this.statusText.innerHTML = `<i class="bi bi-exclamation-triangle fs-5"></i> <span>BARCODE NOT REGISTERED</span>`;
     }
     if (this.statusTimeDetails) {
-      this.statusTimeDetails.textContent = result.message;
+      this.statusTimeDetails.textContent = `Detected Barcode: ${scannedCode}. Please register this student in the database.`;
     }
   }
 
@@ -458,6 +494,7 @@ class BarcodeScannerEngine {
     const student = result.student;
     const att = result.attendance;
     const isInside = att.status === 'Inside';
+    const barcodeNumber = result.decoded_barcode_id || student.barcode_id || '';
     
     const tr = document.createElement('tr');
     tr.style.animation = 'fadeIn 0.4s ease';
@@ -469,6 +506,7 @@ class BarcodeScannerEngine {
         <div class="fw-bold text-dark">${student.student_name}</div>
         <div class="small text-muted">${student.register_number}</div>
       </td>
+      <td><code class="fw-bold text-primary">${barcodeNumber}</code></td>
       <td><span class="badge bg-light text-dark border">${student.department}</span></td>
       <td><span class="fw-semibold">${att.in_time}</span></td>
       <td>${att.out_time || '<span class="text-muted">-</span>'}</td>

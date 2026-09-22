@@ -27,14 +27,12 @@ class Config:
     UPLOAD_FOLDER = os.path.join(STATIC_DIR, 'uploads')
     AVATARS_FOLDER = os.path.join(UPLOAD_FOLDER, 'avatars')
     BARCODE_FOLDER = os.path.join(STATIC_DIR, 'barcodes')
+    BARCODES_UPLOAD_FOLDER = os.path.join(UPLOAD_FOLDER, 'barcodes')
     REPORTS_FOLDER = os.path.join(STATIC_DIR, 'generated_reports')
     
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16 MB max upload
     ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif', 'webp'}
     
-    # Classroom settings
-    CLASSROOM_NAME = "Room 402 - Smart Computing Lab"
-    CLASSROOM_CAPACITY = 60
     SCAN_COOLDOWN_SECONDS = 5  # Anti-flutter debounce between in/out scans for same student
 
 # Ensure directories exist
@@ -44,6 +42,7 @@ for folder in [
     Config.UPLOAD_FOLDER,
     Config.AVATARS_FOLDER,
     Config.BARCODE_FOLDER,
+    Config.BARCODES_UPLOAD_FOLDER,
     Config.REPORTS_FOLDER
 ]:
     os.makedirs(folder, exist_ok=True)

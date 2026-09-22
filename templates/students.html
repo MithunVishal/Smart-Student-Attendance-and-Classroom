@@ -1,18 +1,15 @@
 {% extends "base.html" %}
 
-{% block title %}Student Database - Iris Attendance{% endblock %}
+{% block title %}Student Directory - Iris Attendance{% endblock %}
 
 {% block content %}
 <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
   <div>
     <h3 class="fw-bold text-dark mb-1">Student Management & Registry</h3>
-    <p class="text-muted small mb-0">Enrolled student profiles, photographic database, and individual barcode IDs.</p>
+    <p class="text-muted small mb-0">Enrolled student profiles, photographic database, and ID card barcode numbers.</p>
   </div>
 
   <div class="d-flex align-items-center gap-2">
-    <a href="{{ url_for('id_cards_gallery') }}" class="btn btn-outline-primary btn-sm rounded-pill px-3 py-2 fw-semibold shadow-sm">
-      <i class="bi bi-person-badge-fill me-1"></i>All Printable ID Badges
-    </a>
     <button class="btn btn-primary btn-sm rounded-pill px-3 py-2 fw-semibold shadow-sm d-flex align-items-center gap-2" data-bs-toggle="modal" data-bs-target="#addStudentModal">
       <i class="bi bi-person-plus-fill"></i>
       <span>Add New Student</span>
@@ -33,6 +30,7 @@
     <div class="col-md-4">
       <select name="department" class="form-select" onchange="this.form.submit()">
         <option value="All" {% if selected_dept == 'All' %}selected{% endif %}>All Departments</option>
+        <option value="Artificial Intelligence and Data Science" {% if selected_dept == 'Artificial Intelligence and Data Science' %}selected{% endif %}>Artificial Intelligence and Data Science</option>
         <option value="Computer Science" {% if selected_dept == 'Computer Science' %}selected{% endif %}>Computer Science</option>
         <option value="Information Technology" {% if selected_dept == 'Information Technology' %}selected{% endif %}>Information Technology</option>
         <option value="Electronics & Comm." {% if selected_dept == 'Electronics & Comm.' %}selected{% endif %}>Electronics & Comm.</option>
@@ -54,7 +52,7 @@
 <div class="iris-card">
   <div class="iris-card-header">
     <h6 class="iris-card-title"><i class="bi bi-people-fill text-primary"></i>Enrolled Students ({{ students | length }})</h6>
-    <span class="badge bg-light text-muted border">Class of 2026</span>
+    <span class="badge bg-light text-muted border">Registry</span>
   </div>
 
   <div class="table-responsive">
@@ -66,8 +64,8 @@
           <th>Student Name</th>
           <th>Department</th>
           <th>Year & Section</th>
-          <th>Barcode ID</th>
-          <th>Barcode Scannable</th>
+          <th>Barcode Number</th>
+          <th>ID Card / Barcode</th>
           <th class="text-end">Actions</th>
         </tr>
       </thead>
@@ -84,19 +82,24 @@
             </td>
             <td><span class="badge bg-light text-dark border">{{ s.department }}</span></td>
             <td>{{ s.year }} &bull; Sec {{ s.section }}</td>
-            <td><span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25">{{ s.barcode_id }}</span></td>
             <td>
-              <a href="{{ url_for('static', filename='barcodes/' + s.barcode_id + '.png') }}" target="_blank" title="Click to view barcode image">
-                <img src="{{ url_for('static', filename='barcodes/' + s.barcode_id + '.png') }}" alt="Barcode" style="height: 30px; max-width: 110px; object-fit: contain;">
-              </a>
+              <span class="badge bg-primary bg-opacity-10 text-primary border border-primary border-opacity-25 fs-6 font-monospace px-2 py-1">
+                {{ s.barcode_id }}
+              </span>
+            </td>
+            <td>
+              {% if s.barcode_image_path %}
+                <a href="{{ url_for('static', filename=s.barcode_image_path) }}" target="_blank" title="Click to view full ID card/barcode image">
+                  <img src="{{ url_for('static', filename=s.barcode_image_path) }}" alt="ID Card" class="rounded border shadow-sm" style="height: 38px; max-width: 90px; object-fit: cover;">
+                </a>
+              {% else %}
+                <span class="text-muted small">No image</span>
+              {% endif %}
             </td>
             <td class="text-end">
               <div class="btn-group btn-group-sm">
-                <a href="{{ url_for('student_id_card', student_id=s.id) }}" class="btn btn-outline-primary" title="Print/View ID Badge" target="_blank">
-                  <i class="bi bi-person-badge"></i> ID Card
-                </a>
                 <button type="button" class="btn btn-outline-secondary" title="Edit Student" onclick="openEditModal({{ s | tojson }})">
-                  <i class="bi bi-pencil"></i>
+                  <i class="bi bi-pencil"></i> Edit
                 </button>
                 <button type="button" class="btn btn-outline-danger" title="Delete Student" onclick="confirmDelete({{ s.id }}, '{{ s.student_name }}')">
                   <i class="bi bi-trash"></i>
@@ -134,20 +137,39 @@
             <input type="text" name="student_name" class="form-control" placeholder="e.g. Rahul Dev" required>
           </div>
 
-          <div class="row g-2 mb-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
-              <input type="text" name="register_number" class="form-control" placeholder="e.g. 2026CS110" required>
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
+            <input type="text" name="register_number" class="form-control" placeholder="e.g. 2403921324321017" required>
+          </div>
+
+          <!-- Upload ID Card / Barcode Image with Instant Auto-Scan -->
+          <div class="p-3 bg-light rounded-3 border mb-3">
+            <label class="form-label fw-bold small text-primary d-flex align-items-center justify-content-between">
+              <span><i class="bi bi-camera me-1"></i>UPLOAD ID CARD / BARCODE IMAGE</span>
+              <span class="badge bg-primary-subtle text-primary" style="font-size: 0.7rem;">Auto-scans barcode</span>
+            </label>
+            <input type="file" id="addBarcodeImageInput" name="barcode_image" class="form-control form-control-sm" accept="image/*" onchange="autoScanBarcode(this, 'addBarcodeIdInput', 'addScanFeedback')">
+            <div id="addScanFeedback" class="mt-2 small d-none"></div>
+            <div class="form-text small" style="font-size: 0.75rem;">
+              Upload photo of student ID card barcode. The system will automatically scan it and extract the barcode number!
             </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold small text-secondary">BARCODE ID (Optional)</label>
-              <input type="text" name="barcode_id" class="form-control" placeholder="Auto-generated if empty">
+          </div>
+
+          <!-- Barcode ID Number -->
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">
+              BARCODE NUMBER (From ID Card) *
+            </label>
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-upc text-muted"></i></span>
+              <input type="text" id="addBarcodeIdInput" name="barcode_id" class="form-control font-monospace fw-bold" placeholder="Auto-filled from image or enter manually" required>
             </div>
           </div>
 
           <div class="mb-3">
             <label class="form-label fw-semibold small text-secondary">DEPARTMENT *</label>
             <select name="department" class="form-select" required>
+              <option value="Artificial Intelligence and Data Science" selected>Artificial Intelligence and Data Science</option>
               <option value="Computer Science">Computer Science</option>
               <option value="Information Technology">Information Technology</option>
               <option value="Electronics & Comm.">Electronics & Comm.</option>
@@ -157,7 +179,7 @@
           </div>
 
           <div class="row g-2 mb-3">
-            <div class="col-md-6">
+            <div class="col-6">
               <label class="form-label fw-semibold small text-secondary">YEAR *</label>
               <select name="year" class="form-select" required>
                 <option value="1st Year">1st Year</option>
@@ -166,22 +188,22 @@
                 <option value="4th Year">4th Year</option>
               </select>
             </div>
-            <div class="col-md-6">
+            <div class="col-6">
               <label class="form-label fw-semibold small text-secondary">SECTION *</label>
               <input type="text" name="section" class="form-control" placeholder="e.g. A" value="A" required>
             </div>
           </div>
 
           <div class="mb-2">
-            <label class="form-label fw-semibold small text-secondary">STUDENT PHOTO (Optional)</label>
+            <label class="form-label fw-semibold small text-secondary">STUDENT PROFILE PHOTO (Optional)</label>
             <input type="file" name="photo" class="form-control" accept="image/*">
-            <div class="form-text small">Leave blank to auto-generate a color-coded avatar badge.</div>
+            <div class="form-text small">Optional avatar photo. If blank, initials avatar is used.</div>
           </div>
         </div>
 
         <div class="modal-footer bg-light">
           <button type="button" class="btn btn-secondary rounded-pill px-3" data-bs-dismiss="modal">Cancel</button>
-          <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold">Save & Generate Barcode</button>
+          <button type="submit" class="btn btn-primary rounded-pill px-4 fw-semibold">Save Student</button>
         </div>
       </form>
     </div>
@@ -204,20 +226,33 @@
             <input type="text" id="editName" name="student_name" class="form-control" required>
           </div>
 
-          <div class="row g-2 mb-3">
-            <div class="col-md-6">
-              <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
-              <input type="text" id="editRegNo" name="register_number" class="form-control" required>
-            </div>
-            <div class="col-md-6">
-              <label class="form-label fw-semibold small text-secondary">BARCODE ID *</label>
-              <input type="text" id="editBarcodeId" name="barcode_id" class="form-control" required>
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">REGISTER NUMBER *</label>
+            <input type="text" id="editRegNo" name="register_number" class="form-control" required>
+          </div>
+
+          <!-- Upload / Update ID Card / Barcode Image -->
+          <div class="p-3 bg-light rounded-3 border mb-3">
+            <label class="form-label fw-bold small text-primary d-flex align-items-center justify-content-between">
+              <span><i class="bi bi-camera me-1"></i>UPDATE ID CARD / BARCODE IMAGE</span>
+              <span class="badge bg-primary-subtle text-primary" style="font-size: 0.7rem;">Auto-scans barcode</span>
+            </label>
+            <input type="file" id="editBarcodeImageInput" name="barcode_image" class="form-control form-control-sm" accept="image/*" onchange="autoScanBarcode(this, 'editBarcodeId', 'editScanFeedback')">
+            <div id="editScanFeedback" class="mt-2 small d-none"></div>
+          </div>
+
+          <div class="mb-3">
+            <label class="form-label fw-semibold small text-secondary">BARCODE NUMBER *</label>
+            <div class="input-group">
+              <span class="input-group-text bg-light"><i class="bi bi-upc text-muted"></i></span>
+              <input type="text" id="editBarcodeId" name="barcode_id" class="form-control font-monospace fw-bold" required>
             </div>
           </div>
 
           <div class="mb-3">
             <label class="form-label fw-semibold small text-secondary">DEPARTMENT *</label>
             <select id="editDept" name="department" class="form-select" required>
+              <option value="Artificial Intelligence and Data Science">Artificial Intelligence and Data Science</option>
               <option value="Computer Science">Computer Science</option>
               <option value="Information Technology">Information Technology</option>
               <option value="Electronics & Comm.">Electronics & Comm.</option>
@@ -227,7 +262,7 @@
           </div>
 
           <div class="row g-2 mb-3">
-            <div class="col-md-6">
+            <div class="col-6">
               <label class="form-label fw-semibold small text-secondary">YEAR *</label>
               <select id="editYear" name="year" class="form-select" required>
                 <option value="1st Year">1st Year</option>
@@ -236,14 +271,14 @@
                 <option value="4th Year">4th Year</option>
               </select>
             </div>
-            <div class="col-md-6">
+            <div class="col-6">
               <label class="form-label fw-semibold small text-secondary">SECTION *</label>
               <input type="text" id="editSection" name="section" class="form-control" required>
             </div>
           </div>
 
           <div class="mb-2">
-            <label class="form-label fw-semibold small text-secondary">UPDATE PHOTO (Optional)</label>
+            <label class="form-label fw-semibold small text-secondary">UPDATE PROFILE PHOTO (Optional)</label>
             <input type="file" name="photo" class="form-control" accept="image/*">
           </div>
         </div>
@@ -299,6 +334,42 @@
     document.getElementById('deleteForm').action = `/students/delete/${studentId}`;
     document.getElementById('deleteStudentName').textContent = studentName;
     new bootstrap.Modal(document.getElementById('deleteModal')).show();
+  }
+
+  // Instant auto-scanner for uploaded ID Card / Barcode images
+  async function autoScanBarcode(inputElem, targetInputId, feedbackElemId) {
+    const feedback = document.getElementById(feedbackElemId);
+    const targetInput = document.getElementById(targetInputId);
+    
+    if (!inputElem.files || !inputElem.files[0]) return;
+    
+    const file = inputElem.files[0];
+    feedback.classList.remove('d-none', 'alert-success', 'alert-danger', 'alert-warning');
+    feedback.className = 'mt-2 alert alert-info py-1 px-2 small';
+    feedback.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status"></span> Scanning barcode from image...';
+    
+    const formData = new FormData();
+    formData.append('barcode_image', file);
+    
+    try {
+      const resp = await fetch('/api/decode_barcode_image', {
+        method: 'POST',
+        body: formData
+      });
+      const data = await resp.json();
+      
+      if (data.success && data.barcode_id) {
+        targetInput.value = data.barcode_id;
+        feedback.className = 'mt-2 alert alert-success py-1 px-2 small';
+        feedback.innerHTML = `<i class="bi bi-check-circle-fill me-1"></i><strong>Barcode Detected:</strong> <code>${data.barcode_id}</code> (${data.barcode_type || 'Code'})`;
+      } else {
+        feedback.className = 'mt-2 alert alert-warning py-1 px-2 small';
+        feedback.innerHTML = `<i class="bi bi-exclamation-circle me-1"></i>${data.message || 'No barcode detected. You can type the barcode number manually.'}`;
+      }
+    } catch (err) {
+      feedback.className = 'mt-2 alert alert-warning py-1 px-2 small';
+      feedback.innerHTML = `<i class="bi bi-exclamation-triangle me-1"></i>Upload scan error. You can type the barcode number manually.`;
+    }
   }
 </script>
 {% endblock %}

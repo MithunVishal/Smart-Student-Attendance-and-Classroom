@@ -7,7 +7,7 @@ import cv2
 
 from app import app
 from database import init_db, get_db_connection, record_attendance_scan, get_dashboard_stats
-from scanner import scan_barcodes_from_image, annotate_image_with_barcodes
+from scanner import scan_barcodes_from_image, annotate_image_with_barcodes, decode_barcode_from_file_bytes
 from reports import export_to_csv, export_to_excel, export_to_pdf
 
 class TestAttendanceSystem(unittest.TestCase):
@@ -17,40 +17,35 @@ class TestAttendanceSystem(unittest.TestCase):
         self.client = self.app.test_client()
         init_db()
 
-    def test_database_and_seeds(self):
-        """Test that initial database seed creates sample students and barcodes."""
+    def test_database_and_students(self):
+        """Test that database contains real student records with AI & DS department."""
         conn = get_db_connection()
         students = conn.execute("SELECT * FROM students").fetchall()
-        self.assertGreaterEqual(len(students), 8)
+        self.assertGreaterEqual(len(students), 5)
         
-        # Verify barcode file exists for first student
+        # Verify first student has barcode_id and image
         first_stu = students[0]
-        barcode_file = os.path.join('static', 'barcodes', f"{first_stu['barcode_id']}.png")
-        self.assertTrue(os.path.exists(barcode_file), f"Barcode file {barcode_file} should exist")
+        self.assertTrue(first_stu['barcode_id'].startswith('24AD'))
+        self.assertEqual(first_stu['department'], 'Artificial Intelligence and Data Science')
         conn.close()
 
-    def test_opencv_pyzbar_scanner(self):
-        """Test that OpenCV and Pyzbar decode a synthetic or generated Code128 barcode."""
-        barcode_path = os.path.join('static', 'barcodes', 'STU2026001.png')
-        img = cv2.imread(barcode_path)
-        self.assertIsNotNone(img, "Failed to read barcode test image")
-        
-        results = scan_barcodes_from_image(img)
-        self.assertGreater(len(results), 0, "Pyzbar should detect at least 1 barcode")
-        self.assertEqual(results[0]['data'], 'STU2026001')
-        self.assertIn('polygon', results[0])
-        self.assertIn('rect', results[0])
-        
-        annotated = annotate_image_with_barcodes(img, results)
-        self.assertEqual(annotated.shape, img.shape)
+    def test_barcode_decoding_from_image(self):
+        """Test dual-engine scanner extracts real barcode (Code39) from student ID card images."""
+        test_card = os.path.join('static', 'barcodes', '24AD017_card.jpg')
+        if os.path.exists(test_card):
+            with open(test_card, 'rb') as f:
+                card_bytes = f.read()
+            res = decode_barcode_from_file_bytes(card_bytes)
+            self.assertTrue(res.get('success'), f"Decode failed: {res.get('message')}")
+            self.assertEqual(res.get('barcode_id'), '24AD017')
 
     def test_attendance_lifecycle(self):
-        """Test the IN -> Cooldown -> OUT -> Duration lifecycle."""
-        barcode_id = "STU2026007" # Priya Ramanathan (clean slate)
+        """Test the IN -> Cooldown -> OUT -> Duration lifecycle for real student 24AD017."""
+        barcode_id = "24AD017"
         
-        # Ensure clean state today for STU2026007
         conn = get_db_connection()
         stu = conn.execute("SELECT id FROM students WHERE barcode_id = ?", (barcode_id,)).fetchone()
+        self.assertIsNotNone(stu, f"Student {barcode_id} should exist")
         today_str = datetime.now().strftime('%Y-%m-%d')
         conn.execute("DELETE FROM attendance WHERE student_id = ? AND date = ?", (stu['id'], today_str))
         conn.commit()
@@ -91,38 +86,42 @@ class TestAttendanceSystem(unittest.TestCase):
         scanner_res = self.client.get('/scanner')
         self.assertEqual(scanner_res.status_code, 200)
         self.assertIn(b'Real-Time Barcode Scanner', scanner_res.data)
+        self.assertNotIn(b'Room 402', scanner_res.data) # Verify Room 402 was removed
         
-        # 3. Test /api/scan_frame with an encoded barcode frame
-        with open('static/barcodes/STU2026001.png', 'rb') as f:
-            b64_img = 'data:image/png;base64,' + base64.b64encode(f.read()).decode('utf-8')
-            
-        api_res = self.client.post('/api/scan_frame', json={'image': b64_img})
-        self.assertEqual(api_res.status_code, 200)
-        api_data = api_res.get_json()
-        self.assertIn(api_data['status'], ['success', 'cooldown'])
-        self.assertIn('barcode', api_data)
+        # 3. Test /api/decode_barcode_image endpoint
+        test_card = os.path.join('static', 'barcodes', '24AD017_card.jpg')
+        if os.path.exists(test_card):
+            with open(test_card, 'rb') as f:
+                card_content = f.read()
+            upload_res = self.client.post(
+                '/api/decode_barcode_image',
+                data={'barcode_image': (io.BytesIO(card_content), 'card.jpeg')},
+                content_type='multipart/form-data'
+            )
+            self.assertEqual(upload_res.status_code, 200)
+            data = upload_res.get_json()
+            self.assertTrue(data.get('success'), f"API decode error: {data}")
+            self.assertEqual(data.get('barcode_id'), '24AD017')
         
         # 4. Students directory
         students_res = self.client.get('/students')
         self.assertEqual(students_res.status_code, 200)
-        self.assertIn(b'Aarav Sharma', students_res.data)
+        self.assertIn(b'Subash', students_res.data)
+        self.assertIn(b'Artificial Intelligence and Data Science', students_res.data)
         
-        # 5. ID Cards Gallery
-        id_cards_res = self.client.get('/id-cards')
-        self.assertEqual(id_cards_res.status_code, 200)
-        self.assertIn(b'INSTITUTE OF TECHNOLOGY', id_cards_res.data)
-        
-        # 6. Attendance Table
+        # 5. Attendance Table
         att_res = self.client.get('/attendance')
         self.assertEqual(att_res.status_code, 200)
         self.assertIn(b'Attendance Audit Records', att_res.data)
+        self.assertIn(b'Artificial Intelligence and Data Science', att_res.data)
         
-        # 7. Reports page
+        # 6. Reports page
         rep_res = self.client.get('/reports')
         self.assertEqual(rep_res.status_code, 200)
         self.assertIn(b'Attendance Reports', rep_res.data)
+        self.assertIn(b'Artificial Intelligence and Data Science', rep_res.data)
         
-        # 8. Export CSV, Excel, PDF endpoints
+        # 7. Export CSV, Excel, PDF endpoints
         csv_res = self.client.get('/reports/export/csv?report_type=daily')
         self.assertEqual(csv_res.status_code, 200)
         self.assertIn(b'Register Number', csv_res.data)

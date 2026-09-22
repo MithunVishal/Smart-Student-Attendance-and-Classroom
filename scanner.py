@@ -4,8 +4,14 @@ import numpy as np
 import pyzbar.pyzbar as pyzbar
 from typing import List, Dict, Any, Tuple
 
+try:
+    import zxingcpp
+    HAS_ZXING = True
+except ImportError:
+    HAS_ZXING = False
+
 def decode_base64_image(base64_str: str) -> np.ndarray:
-    """Decodes a base64 data URI string (from HTML5 canvas) into an OpenCV BGR image."""
+    """Decodes a base64 data URI string (from HTML5 canvas or upload) into an OpenCV BGR image."""
     if ',' in base64_str:
         base64_str = base64_str.split(',', 1)[1]
     image_bytes = base64.b64decode(base64_str)
@@ -15,11 +21,11 @@ def decode_base64_image(base64_str: str) -> np.ndarray:
 
 def preprocess_for_low_light(gray_img: np.ndarray) -> List[np.ndarray]:
     """
-    Generates multiple enhanced variations of the image for robust detection:
+    Generates enhanced variations of the image for robust detection:
     1. Standard grayscale
     2. CLAHE (Contrast Limited Adaptive Histogram Equalization) for low/uneven lighting
     3. Sharpened CLAHE
-    4. Otsu / Adaptive threshold
+    4. Adaptive threshold
     """
     variants = [gray_img]
     
@@ -49,55 +55,119 @@ def preprocess_for_low_light(gray_img: np.ndarray) -> List[np.ndarray]:
 def scan_barcodes_from_image(image: np.ndarray) -> List[Dict[str, Any]]:
     """
     Detects and decodes barcodes from an OpenCV image.
-    Tries standard and enhanced pipelines to ensure detection in low light and moving cards.
+    Uses multi-stage enhancement combining Pyzbar and ZXing-cpp for maximum real-world detection accuracy.
     """
     if image is None or image.size == 0:
         return []
         
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    
-    # Try multiple image enhancement passes
     image_variants = preprocess_for_low_light(gray)
     
     detected = []
     seen_codes = set()
     
+    # Pass 1: Try Pyzbar across enhanced variations
     for variant in image_variants:
-        decoded_objects = pyzbar.decode(variant)
-        for obj in decoded_objects:
-            try:
-                data_str = obj.data.decode('utf-8').strip()
-            except UnicodeDecodeError:
-                data_str = obj.data.decode('latin-1', errors='ignore').strip()
+        try:
+            decoded_objects = pyzbar.decode(variant)
+            for obj in decoded_objects:
+                try:
+                    data_str = obj.data.decode('utf-8').strip()
+                except UnicodeDecodeError:
+                    data_str = obj.data.decode('latin-1', errors='ignore').strip()
+                    
+                if not data_str or data_str in seen_codes:
+                    continue
+                    
+                seen_codes.add(data_str)
+                polygon = [{"x": int(pt.x), "y": int(pt.y)} for pt in obj.polygon]
+                rect = {
+                    "x": int(obj.rect.left),
+                    "y": int(obj.rect.top),
+                    "w": int(obj.rect.width),
+                    "h": int(obj.rect.height)
+                }
                 
-            if not data_str or data_str in seen_codes:
-                continue
-                
-            seen_codes.add(data_str)
-            
-            # Extract polygon points
-            polygon = [{"x": int(pt.x), "y": int(pt.y)} for pt in obj.polygon]
-            
-            # Extract bounding rectangle
-            rect = {
-                "x": int(obj.rect.left),
-                "y": int(obj.rect.top),
-                "w": int(obj.rect.width),
-                "h": int(obj.rect.height)
-            }
-            
-            detected.append({
-                "data": data_str,
-                "type": obj.type,
-                "rect": rect,
-                "polygon": polygon
-            })
+                detected.append({
+                    "data": data_str,
+                    "type": str(obj.type),
+                    "rect": rect,
+                    "polygon": polygon
+                })
+        except Exception:
+            pass
             
         if detected:
-            # If detected in this pass, return immediately for maximum speed
-            break
-            
+            return detected
+
+    # Pass 2: Try ZXing-cpp (exceptional with skewed, tilted, or low-contrast ID card barcodes)
+    if HAS_ZXING and not detected:
+        for variant in [image, gray] + image_variants:
+            try:
+                z_objects = zxingcpp.read_barcodes(variant)
+                for z_obj in z_objects:
+                    data_str = z_obj.text.strip()
+                    if not data_str or data_str in seen_codes:
+                        continue
+                        
+                    seen_codes.add(data_str)
+                    
+                    pos = z_obj.position
+                    polygon = [
+                        {"x": int(pos.top_left.x), "y": int(pos.top_left.y)},
+                        {"x": int(pos.top_right.x), "y": int(pos.top_right.y)},
+                        {"x": int(pos.bottom_right.x), "y": int(pos.bottom_right.y)},
+                        {"x": int(pos.bottom_left.x), "y": int(pos.bottom_left.y)}
+                    ]
+                    
+                    xs = [p['x'] for p in polygon]
+                    ys = [p['y'] for p in polygon]
+                    rect = {
+                        "x": min(xs),
+                        "y": min(ys),
+                        "w": max(xs) - min(xs),
+                        "h": max(ys) - min(ys)
+                    }
+                    
+                    detected.append({
+                        "data": data_str,
+                        "type": z_obj.format.name,
+                        "rect": rect,
+                        "polygon": polygon
+                    })
+            except Exception:
+                pass
+                
+            if detected:
+                return detected
+                
     return detected
+
+def decode_barcode_from_file_bytes(file_bytes: bytes) -> Dict[str, Any]:
+    """
+    Decodes barcode from raw uploaded file bytes.
+    Returns {'success': True, 'barcode_id': ..., 'type': ...} or {'success': False, 'message': ...}
+    """
+    try:
+        np_arr = np.frombuffer(file_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+        if img is None:
+            return {'success': False, 'message': 'Could not decode image file'}
+            
+        barcodes = scan_barcodes_from_image(img)
+        if barcodes:
+            return {
+                'success': True,
+                'barcode_id': barcodes[0]['data'],
+                'barcode_type': barcodes[0]['type']
+            }
+        else:
+            return {
+                'success': False,
+                'message': 'No readable barcode detected in this image. Please ensure the barcode is clearly visible, or enter the barcode number manually.'
+            }
+    except Exception as e:
+        return {'success': False, 'message': str(e)}
 
 def annotate_image_with_barcodes(image: np.ndarray, barcodes: List[Dict[str, Any]]) -> np.ndarray:
     """
@@ -123,7 +193,6 @@ def annotate_image_with_barcodes(image: np.ndarray, barcodes: List[Dict[str, Any
             x, y, w, h = r.get('x', 0), r.get('y', 0), r.get('w', 0), r.get('h', 0)
             cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 128), 3)
             
-        # Draw label text background
         label = f"{b['type']}: {b['data']}"
         pos_y = max(25, b.get('rect', {}).get('y', 30) - 10)
         pos_x = b.get('rect', {}).get('x', 10)

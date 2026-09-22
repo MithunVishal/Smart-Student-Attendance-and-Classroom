@@ -15,14 +15,13 @@ from database import (
     get_attendance_records, get_all_students, record_attendance_scan,
     create_sample_avatar
 )
-from scanner import decode_base64_image, scan_barcodes_from_image
-from barcode_gen import get_or_create_barcode_image, generate_barcode_image
+from scanner import decode_base64_image, scan_barcodes_from_image, decode_barcode_from_file_bytes
 from reports import export_to_csv, export_to_excel, export_to_pdf
 
 app = Flask(__name__)
 app.config.from_object(Config)
 
-# Ensure DB and sample seeds exist
+# Ensure DB and columns exist
 init_db()
 
 def login_required(f):
@@ -38,8 +37,6 @@ def login_required(f):
 @app.context_processor
 def inject_globals():
     return {
-        'classroom_name': Config.CLASSROOM_NAME,
-        'classroom_capacity': Config.CLASSROOM_CAPACITY,
         'current_year': datetime.now().year,
         'today_date': date.today().strftime('%Y-%m-%d'),
         'current_time_str': datetime.now().strftime('%H:%M:%S'),
@@ -117,11 +114,11 @@ def scanner():
 def api_scan_frame():
     """
     Receives base64 camera frame from client:
-    1. Preprocesses image (CLAHE / contrast) via OpenCV.
-    2. Decodes barcode via Pyzbar.
+    1. Preprocesses image via OpenCV.
+    2. Decodes actual physical barcode via Pyzbar / ZXing.
     3. Finds match in student database.
     4. Handles IN / OUT / Cooldown logic.
-    5. Returns student details, bounding box & status.
+    5. Returns student details, exact scanned barcode number, bounding box & status.
     """
     data = request.get_json(silent=True) or {}
     image_data = data.get('image')
@@ -130,32 +127,31 @@ def api_scan_frame():
         return jsonify({'status': 'error', 'message': 'No image frame received'}), 400
         
     try:
-        # Decode base64 image into OpenCV BGR numpy array
         image = decode_base64_image(image_data)
         if image is None:
             return jsonify({'status': 'error', 'message': 'Failed to decode image frame'}), 400
             
-        # Detect and decode barcodes
         detected_barcodes = scan_barcodes_from_image(image)
         
         if not detected_barcodes:
             return jsonify({'status': 'no_barcode'})
             
-        # Primary barcode detected
+        # Primary barcode detected from student ID card
         primary_barcode = detected_barcodes[0]
-        barcode_id = primary_barcode['data']
+        barcode_id = primary_barcode['data'].strip()
         barcode_type = primary_barcode['type']
         
         # Process attendance in database
         result = record_attendance_scan(barcode_id)
         
-        # Attach detected geometric coordinates for visual canvas overlay
+        # Attach detected geometric coordinates and decoded number
         result['barcode'] = {
             'data': barcode_id,
             'type': barcode_type,
             'rect': primary_barcode.get('rect'),
             'polygon': primary_barcode.get('polygon')
         }
+        result['decoded_barcode_id'] = barcode_id
         
         # Fetch updated quick room stats
         today_str = date.today().strftime('%Y-%m-%d')
@@ -164,15 +160,37 @@ def api_scan_frame():
             "SELECT COUNT(*) as count FROM attendance WHERE date = ? AND status = 'Inside'",
             (today_str,)
         ).fetchone()['count']
+        present_count = conn.execute(
+            "SELECT COUNT(DISTINCT student_id) as count FROM attendance WHERE date = ?",
+            (today_str,)
+        ).fetchone()['count']
         conn.close()
         
         result['current_inside'] = inside_count
-        result['capacity'] = Config.CLASSROOM_CAPACITY
+        result['present_today'] = present_count
         
         return jsonify(result)
         
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/decode_barcode_image', methods=['POST'])
+@login_required
+def api_decode_barcode_image():
+    """
+    Scans a manually uploaded barcode image / ID card photo and returns the exact decoded barcode number.
+    Used for instant auto-filling when adding or editing a student.
+    """
+    file = request.files.get('barcode_image')
+    if not file or not file.filename:
+        return jsonify({'success': False, 'message': 'No file uploaded'}), 400
+        
+    try:
+        file_bytes = file.read()
+        res = decode_barcode_from_file_bytes(file_bytes)
+        return jsonify(res)
+    except Exception as e:
+        return jsonify({'success': False, 'message': str(e)}), 500
 
 # ==========================================
 # STUDENT MANAGEMENT
@@ -195,13 +213,32 @@ def students():
             flash("Please fill in all required student details.", "danger")
             return redirect(url_for('students'))
             
-        # Auto-generate barcode ID if not provided
+        # Handle Barcode Image Upload & Auto-Scan
+        barcode_image_file = request.files.get('barcode_image')
+        barcode_image_path = None
+        
+        if barcode_image_file and barcode_image_file.filename:
+            raw_bytes = barcode_image_file.read()
+            filename = secure_filename(f"card_{register_number}_{barcode_image_file.filename}")
+            save_path = os.path.join(Config.BARCODES_UPLOAD_FOLDER, filename)
+            with open(save_path, 'wb') as f:
+                f.write(raw_bytes)
+            barcode_image_path = f"uploads/barcodes/{filename}"
+            
+            # Automatically scan barcode from this uploaded card image if barcode_id was not entered
+            if not barcode_id:
+                scan_res = decode_barcode_from_file_bytes(raw_bytes)
+                if scan_res.get('success'):
+                    barcode_id = scan_res['barcode_id']
+                    
         if not barcode_id:
-            barcode_id = f"STU{register_number.replace(' ', '')}"
+            flash("Could not detect barcode from uploaded image. Please enter the Barcode ID manually.", "warning")
+            conn.close()
+            return redirect(url_for('students'))
             
         # Check uniqueness
         existing = conn.execute(
-            "SELECT id FROM students WHERE register_number = ? OR barcode_id = ?",
+            "SELECT id FROM students WHERE register_number = ? OR UPPER(barcode_id) = UPPER(?)",
             (register_number, barcode_id)
         ).fetchone()
         
@@ -220,17 +257,13 @@ def students():
             photo_file.save(filepath)
             photo_path = f"uploads/avatars/{filename}"
         else:
-            # Generate styled initial avatar
             photo_path = create_sample_avatar(student_name, (30, 64, 175))
             
-        # Generate Code128 Barcode Image
-        get_or_create_barcode_image(barcode_id)
-        
-        # Save to database
+        # Save to database (NO synthetic barcode generated!)
         conn.execute("""
-        INSERT INTO students (student_name, register_number, department, year, section, photo_path, barcode_id)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (student_name, register_number, department, year, section, photo_path, barcode_id))
+        INSERT INTO students (student_name, register_number, department, year, section, photo_path, barcode_id, barcode_image_path)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        """, (student_name, register_number, department, year, section, photo_path, barcode_id, barcode_image_path))
         conn.commit()
         conn.close()
         
@@ -269,15 +302,31 @@ def edit_student(student_id):
         photo_file.save(filepath)
         photo_path = f"uploads/avatars/{filename}"
         
-    # Re-generate barcode image if barcode_id changed
-    if barcode_id != student['barcode_id']:
-        get_or_create_barcode_image(barcode_id)
+    # Handle barcode image update
+    barcode_image_file = request.files.get('barcode_image')
+    barcode_image_path = student['barcode_image_path']
+    if barcode_image_file and barcode_image_file.filename:
+        raw_bytes = barcode_image_file.read()
+        filename = secure_filename(f"card_{register_number}_{barcode_image_file.filename}")
+        save_path = os.path.join(Config.BARCODES_UPLOAD_FOLDER, filename)
+        with open(save_path, 'wb') as f:
+            f.write(raw_bytes)
+        barcode_image_path = f"uploads/barcodes/{filename}"
+        
+        # Auto scan if barcode_id was empty
+        if not barcode_id:
+            scan_res = decode_barcode_from_file_bytes(raw_bytes)
+            if scan_res.get('success'):
+                barcode_id = scan_res['barcode_id']
+                
+    if not barcode_id:
+        barcode_id = student['barcode_id']
         
     conn.execute("""
     UPDATE students
-    SET student_name = ?, register_number = ?, department = ?, year = ?, section = ?, barcode_id = ?, photo_path = ?
+    SET student_name = ?, register_number = ?, department = ?, year = ?, section = ?, barcode_id = ?, barcode_image_path = ?, photo_path = ?
     WHERE id = ?
-    """, (student_name, register_number, department, year, section, barcode_id, photo_path, student_id))
+    """, (student_name, register_number, department, year, section, barcode_id, barcode_image_path, photo_path, student_id))
     conn.commit()
     conn.close()
     
@@ -295,29 +344,6 @@ def delete_student(student_id):
         flash(f"Student '{student['student_name']}' has been deleted.", "info")
     conn.close()
     return redirect(url_for('students'))
-
-@app.route('/students/<int:student_id>/id-card')
-@login_required
-def student_id_card(student_id):
-    conn = get_db_connection()
-    student = conn.execute("SELECT * FROM students WHERE id = ?", (student_id,)).fetchone()
-    conn.close()
-    if not student:
-        flash("Student not found.", "danger")
-        return redirect(url_for('students'))
-        
-    student = dict(student)
-    # Ensure barcode exists
-    get_or_create_barcode_image(student['barcode_id'])
-    return render_template('id_card.html', student=student, single=True)
-
-@app.route('/id-cards')
-@login_required
-def id_cards_gallery():
-    students_list = get_all_students()
-    for s in students_list:
-        get_or_create_barcode_image(s['barcode_id'])
-    return render_template('id_cards_gallery.html', students=students_list)
 
 # ==========================================
 # ATTENDANCE RECORDS
