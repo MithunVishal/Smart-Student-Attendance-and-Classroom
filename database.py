@@ -236,6 +236,11 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         updated_record = dict(cursor.fetchone())
         conn.close()
         
+        try:
+            sync_automatic_energy_state()
+        except Exception:
+            pass
+            
         return {
             'status': 'success',
             'action': 'CHECK_OUT',
@@ -258,6 +263,11 @@ def record_attendance_scan(barcode_id: str, scan_time: datetime = None):
         new_record = dict(cursor.fetchone())
         conn.close()
         
+        try:
+            sync_automatic_energy_state()
+        except Exception:
+            pass
+            
         return {
             'status': 'success',
             'action': 'CHECK_IN',
@@ -421,7 +431,7 @@ LIGHT_DEFAULT_WATTS = 20.0
 TARIFF_PER_KWH = 8.00  # Standard institutional rate in INR (or currency units)
 
 def init_energy_tables(cursor, conn):
-    """Initializes the energy zones and energy history tables with default zones and past trends."""
+    """Initializes the energy zones, settings, and energy history tables with default configurations."""
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS energy_zones (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -436,6 +446,16 @@ def init_energy_tables(cursor, conn):
         total_operating_seconds_today INTEGER DEFAULT 0,
         total_kwh_today REAL DEFAULT 0.0,
         last_date TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS energy_settings (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        control_mode TEXT DEFAULT 'auto',
+        temperature REAL DEFAULT 28.0,
+        manual_student_override INTEGER DEFAULT NULL,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     )
     """)
@@ -458,6 +478,16 @@ def init_energy_tables(cursor, conn):
     conn.commit()
     
     today_str = date.today().strftime('%Y-%m-%d')
+    
+    # Seed default energy settings (Auto mode, 28°C, Live attendance)
+    cursor.execute("SELECT COUNT(*) as count FROM energy_settings")
+    s_row = cursor.fetchone()
+    if s_row and s_row['count'] == 0:
+        cursor.execute("""
+        INSERT INTO energy_settings (control_mode, temperature, manual_student_override)
+        VALUES ('auto', 28.0, NULL)
+        """)
+        conn.commit()
     
     # Seed 3 default classroom zones if not yet existing
     cursor.execute("SELECT COUNT(*) as count FROM energy_zones")
@@ -508,6 +538,89 @@ def init_energy_tables(cursor, conn):
             """, (past_date, act_kwh, base_kwh, sv_kwh, sv_pct, cost_c, cost_s, op_hours, note))
         conn.commit()
 
+def get_energy_settings():
+    """Retrieves current energy control settings (Auto/Manual mode, temperature, student override)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM energy_settings ORDER BY id ASC LIMIT 1")
+    row = cursor.fetchone()
+    if not row:
+        cursor.execute("""
+        INSERT INTO energy_settings (control_mode, temperature, manual_student_override)
+        VALUES ('auto', 28.0, NULL)
+        """)
+        conn.commit()
+        cursor.execute("SELECT * FROM energy_settings ORDER BY id ASC LIMIT 1")
+        row = cursor.fetchone()
+    settings = dict(row)
+    conn.close()
+    return settings
+
+def update_energy_settings(control_mode=None, temperature=None, manual_student_override="NO_CHANGE"):
+    """Updates energy control settings and applies automated adjustments if in Auto mode."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    current = get_energy_settings()
+    
+    new_mode = control_mode if control_mode is not None else current['control_mode']
+    new_temp = float(temperature) if temperature is not None else float(current['temperature'])
+    new_override = current['manual_student_override'] if manual_student_override == "NO_CHANGE" else manual_student_override
+    
+    cursor.execute("""
+    UPDATE energy_settings
+    SET control_mode = ?, temperature = ?, manual_student_override = ?, updated_at = CURRENT_TIMESTAMP
+    WHERE id = ?
+    """, (new_mode, new_temp, new_override, current['id']))
+    conn.commit()
+    conn.close()
+    
+    if new_mode == 'auto':
+        sync_automatic_energy_state()
+        
+    return get_energy_dashboard_metrics()
+
+def get_current_student_count(target_date: str = None):
+    """Returns currently present students (Inside), respecting manual demonstration override if set."""
+    settings = get_energy_settings()
+    if settings.get('manual_student_override') is not None:
+        return int(settings['manual_student_override'])
+        
+    if not target_date:
+        target_date = date.today().strftime('%Y-%m-%d')
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT COUNT(*) as inside FROM attendance WHERE date = ? AND status = 'Inside'", (target_date,))
+    row = cursor.fetchone()
+    count = row['inside'] if row else 0
+    conn.close()
+    return count
+
+def sync_automatic_energy_state():
+    """
+    Automates zone activation according to student strength:
+      * 0 students -> All zones OFF
+      * 1–10 students -> Zone 1 ON
+      * 11–20 students -> Zones 1 + 2 ON
+      * 21+ students -> Zones 1 + 2 + 3 ON
+    """
+    settings = get_energy_settings()
+    if settings.get('control_mode') != 'auto':
+        return
+        
+    student_count = get_current_student_count()
+    
+    if student_count <= 0:
+        target_zones = {1: False, 2: False, 3: False}
+    elif student_count <= 10:
+        target_zones = {1: True, 2: False, 3: False}
+    elif student_count <= 20:
+        target_zones = {1: True, 2: True, 3: False}
+    else:
+        target_zones = {1: True, 2: True, 3: True}
+        
+    for zn, should_be_active in target_zones.items():
+        toggle_energy_zone(zn, target_state=should_be_active, switch_to_manual=False)
+
 def check_and_rollover_energy_day(conn):
     """Checks if the date has changed since the last recorded energy operation and archives daily metrics."""
     today_str = date.today().strftime('%Y-%m-%d')
@@ -548,9 +661,19 @@ def check_and_rollover_energy_day(conn):
         conn.commit()
 
 def get_energy_zones_status():
-    """Retrieves real-time status, live power, operating time, and kWh for each of the 3 zones."""
+    """
+    Retrieves real-time status, live power, operating time, and kWh for each of the 3 zones.
+    Incorporates temperature-based fan control and occupancy-based light control:
+      * Below 24°C -> Fans OFF
+      * 24–27°C -> Fans ON at normal/low speed
+      * Above 27°C -> Fans ON at full speed
+      * Lights ON only in active zones
+    """
     conn = get_db_connection()
     check_and_rollover_energy_day(conn)
+    
+    settings = get_energy_settings()
+    temperature = float(settings.get('temperature', 28.0))
     
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM energy_zones ORDER BY zone_number ASC")
@@ -561,13 +684,37 @@ def get_energy_zones_status():
     for r in rows:
         z_dict = dict(r)
         is_active = bool(z_dict['is_active'])
-        fp = float(z_dict['fan_power_watts'])
-        lp = float(z_dict['light_power_watts'])
-        fans = int(z_dict['fans_count'])
-        lights = int(z_dict['lights_count'])
+        fp = float(z_dict['fan_power_watts'])   # 75W
+        lp = float(z_dict['light_power_watts']) # 20W
+        fans = int(z_dict['fans_count'])        # 3
+        lights = int(z_dict['lights_count'])    # 2
         
-        # Zone rated power when operating: 3 * 75 + 2 * 20 = 265 W
-        rated_zone_watts = (fans * fp) + (lights * lp)
+        # 1. Lights control: Lights ON only in active zones
+        working_lights = lights if is_active else 0
+        light_watts = (lights * lp) if is_active else 0.0
+        
+        # 2. Temperature fan control:
+        # Below 24°C -> Fans OFF
+        # 24–27°C -> Fans ON at low/normal operation
+        # Above 27°C -> Fans ON at full operation
+        if not is_active or temperature < 24.0:
+            working_fans = 0
+            fan_watts = 0.0
+            fan_status = "OFF (<24°C)" if is_active else "OFF"
+            fan_speed = "off"
+        elif 24.0 <= temperature <= 27.0:
+            working_fans = fans
+            fan_watts = fans * fp
+            fan_status = "Normal / Low (24–27°C)"
+            fan_speed = "normal"
+        else: # > 27.0°C
+            working_fans = fans
+            fan_watts = fans * fp
+            fan_status = "Full Power (>27°C)"
+            fan_speed = "full"
+            
+        curr_watts = fan_watts + light_watts
+        rated_zone_watts = (fans * fp) + (lights * lp) # 265 W rated max
         
         live_sec = int(z_dict['total_operating_seconds_today'] or 0)
         live_kwh = float(z_dict['total_kwh_today'] or 0.0)
@@ -577,17 +724,17 @@ def get_energy_zones_status():
                 last_on_dt = datetime.fromisoformat(z_dict['last_turned_on'])
                 elapsed = max(0, int((now - last_on_dt).total_seconds()))
                 live_sec += elapsed
-                live_kwh += (rated_zone_watts * (elapsed / 3600.0)) / 1000.0
+                live_kwh += (curr_watts * (elapsed / 3600.0)) / 1000.0
             except Exception:
                 pass
                 
-        working_fans = fans if is_active else 0
-        working_lights = lights if is_active else 0
-        curr_watts = rated_zone_watts if is_active else 0.0
-        
         z_dict['is_active'] = is_active
         z_dict['working_fans'] = working_fans
         z_dict['working_lights'] = working_lights
+        z_dict['fan_status'] = fan_status
+        z_dict['fan_speed'] = fan_speed
+        z_dict['fan_watts'] = round(fan_watts, 1)
+        z_dict['light_watts'] = round(light_watts, 1)
         z_dict['rated_zone_watts'] = round(rated_zone_watts, 1)
         z_dict['current_power_watts'] = round(curr_watts, 1)
         z_dict['operating_seconds'] = live_sec
@@ -599,10 +746,15 @@ def get_energy_zones_status():
     conn.close()
     return zones
 
-def toggle_energy_zone(zone_number: int, target_state: bool = None):
+def toggle_energy_zone(zone_number: int, target_state: bool = None, switch_to_manual: bool = True):
     """Toggles an energy zone ON/OFF and accumulates operating seconds and kWh."""
     conn = get_db_connection()
     check_and_rollover_energy_day(conn)
+    
+    if switch_to_manual:
+        # If teacher manually clicks a zone button, switch mode to manual
+        conn.execute("UPDATE energy_settings SET control_mode = 'manual', updated_at = CURRENT_TIMESTAMP")
+        conn.commit()
     
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM energy_zones WHERE zone_number = ?", (zone_number,))
@@ -625,7 +777,6 @@ def toggle_energy_zone(zone_number: int, target_state: bool = None):
     tot_kwh = float(zone['total_kwh_today'] or 0.0)
     
     if current_active:
-        # Zone was active; calculate elapsed time and add to totals
         if zone['last_turned_on']:
             try:
                 last_on_dt = datetime.fromisoformat(zone['last_turned_on'])
@@ -652,28 +803,49 @@ def toggle_energy_zone(zone_number: int, target_state: bool = None):
     return get_energy_zones_status()
 
 def set_all_zones(state: bool):
-    """Turns all 3 classroom zones ON or OFF simultaneously."""
+    """Turns all 3 classroom zones ON or OFF manually."""
+    # When user clicks master turn on/off, switch mode to manual
+    conn = get_db_connection()
+    conn.execute("UPDATE energy_settings SET control_mode = 'manual', updated_at = CURRENT_TIMESTAMP")
+    conn.commit()
+    conn.close()
+    
     for zn in [1, 2, 3]:
-        toggle_energy_zone(zn, target_state=state)
+        toggle_energy_zone(zn, target_state=state, switch_to_manual=False)
     return get_energy_zones_status()
 
 def get_energy_dashboard_metrics():
-    """Calculates live energy consumption, reference baseline, energy saved, costs, and saving %."""
+    """
+    Calculates live metrics, active counts, student occupancy, temperature,
+    current power, energy consumed, energy saved, and dynamic status message.
+    """
+    settings = get_energy_settings()
+    if settings.get('control_mode') == 'auto':
+        sync_automatic_energy_state()
+        
     zones = get_energy_zones_status()
+    student_count = get_current_student_count()
+    temperature = float(settings.get('temperature', 28.0))
+    control_mode = settings.get('control_mode', 'auto')
+    is_student_override = settings.get('manual_student_override') is not None
     
     current_power_watts = sum(z['current_power_watts'] for z in zones)
-    max_power_watts = 795.0 # 3 zones * 265 W = 795 W
+    max_power_watts = 795.0 # 9 fans (675W) + 6 lights (120W) = 795 W
     
     active_count = sum(1 for z in zones if z['is_active'])
     total_count = len(zones)
     
+    fans_on = sum(z['working_fans'] for z in zones)
+    total_fans = sum(z['fans_count'] for z in zones) # 9
+    
+    lights_on = sum(z['working_lights'] for z in zones)
+    total_lights = sum(z['lights_count'] for z in zones) # 6
+    
     today_kwh = sum(z['energy_kwh'] for z in zones)
     
-    # Classroom operating duration today: maximum duration any zone was in use
     classroom_op_sec = max((z['operating_seconds'] for z in zones), default=0) if zones else 0
     classroom_op_hours = round(classroom_op_sec / 3600.0, 2)
     
-    # Reference baseline energy: all 3 zones ON for the same classroom active duration
     if classroom_op_hours > 0:
         baseline_kwh = round(0.795 * classroom_op_hours, 3)
         if baseline_kwh < today_kwh:
@@ -691,7 +863,44 @@ def get_energy_dashboard_metrics():
     today_cost = round(today_kwh * TARIFF_PER_KWH, 2)
     today_cost_saved = round(saved_kwh * TARIFF_PER_KWH, 2)
     
+    # Dynamic Status Message: e.g. "2 Zones Active – 15 Students – 28°C"
+    temp_display = int(temperature) if temperature.is_integer() else temperature
+    if active_count == 0:
+        status_message = f"All Zones Inactive – {student_count} Students – {temp_display}°C"
+    else:
+        zone_str = f"{active_count} Zone{'s' if active_count != 1 else ''} Active"
+        stu_str = f"{student_count} Student{'s' if student_count != 1 else ''}"
+        status_message = f"{zone_str} – {stu_str} – {temp_display}°C"
+        
+    # Informative breakdown for status badge/banner
+    if control_mode == 'auto':
+        if active_count == 0:
+            rule_reason = "Zero students (0); all zones powered down."
+        elif active_count == 1:
+            rule_reason = "1–10 students; Zone 1 active."
+        elif active_count == 2:
+            rule_reason = "11–20 students; Zones 1 & 2 active."
+        else:
+            rule_reason = "21+ students; All 3 zones active."
+            
+        if temperature < 24.0:
+            temp_reason = "Fans OFF (<24°C)"
+        elif 24.0 <= temperature <= 27.0:
+            temp_reason = "Fans Normal Speed (24–27°C)"
+        else:
+            temp_reason = "Fans Full Speed (>27°C)"
+            
+        status_detail = f"AUTO MODE: {rule_reason} • {temp_reason} • {lights_on}/6 Lights ON"
+    else:
+        status_detail = f"MANUAL MODE: Teacher manual override ({active_count}/3 zones active) • {fans_on}/9 Fans • {lights_on}/6 Lights"
+        
     return {
+        'control_mode': control_mode,
+        'temperature': temperature,
+        'student_count': student_count,
+        'is_student_override': is_student_override,
+        'status_message': status_message,
+        'status_detail': status_detail,
         'current_power_watts': round(current_power_watts, 1),
         'current_power_kw': round(current_power_watts / 1000.0, 3),
         'max_power_watts': max_power_watts,
@@ -699,6 +908,12 @@ def get_energy_dashboard_metrics():
         'active_zones_count': active_count,
         'total_zones_count': total_count,
         'active_zones_ratio': f"{active_count} / {total_count}",
+        'fans_on': fans_on,
+        'total_fans': total_fans,
+        'fans_ratio': f"{fans_on} / {total_fans}",
+        'lights_on': lights_on,
+        'total_lights': total_lights,
+        'lights_ratio': f"{lights_on} / {total_lights}",
         'today_kwh': round(today_kwh, 3),
         'baseline_kwh': round(baseline_kwh, 3),
         'saved_kwh': round(saved_kwh, 3),
@@ -723,4 +938,5 @@ def get_energy_history(limit: int = 14):
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
 

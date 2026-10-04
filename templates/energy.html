@@ -3,121 +3,261 @@
 {% block title %}Energy Management - Iris Smart Classroom{% endblock %}
 
 {% block content %}
-<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+<!-- Top Header & Master Action Bar -->
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-3">
   <div>
     <div class="d-flex align-items-center gap-2 mb-1">
       <h3 class="fw-bold text-dark mb-0">Classroom Energy Management</h3>
       <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">
-        <i class="bi bi-leaf-fill me-1"></i>ECO OPTIMIZED
+        <i class="bi bi-cpu-fill me-1"></i>SMART AUTOMATION
       </span>
     </div>
     <p class="text-muted small mb-0">
-      Real-time 3-zone electrical load monitoring, manual zone controls, and daily energy efficiency auditing.
+      Automated 3-zone electrical control powered by real-time student occupancy and ambient classroom temperature.
     </p>
   </div>
 
   <!-- Master Controls -->
   <div class="d-flex flex-wrap align-items-center gap-2">
-    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(true)">
-      <i class="bi bi-power me-1"></i>Turn All ON
-    </button>
-    <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(false)">
-      <i class="bi bi-slash-circle me-1"></i>Turn All OFF
-    </button>
+    <div class="btn-group p-1 bg-light border rounded-pill shadow-sm" role="group">
+      <button type="button" class="btn btn-sm rounded-pill px-3 fw-bold {% if metrics.control_mode == 'auto' %}btn-primary text-white{% else %}btn-light text-secondary{% endif %}" id="btnModeAuto" onclick="setControlMode('auto')">
+        <i class="bi bi-magic me-1"></i>Automatic Mode
+      </button>
+      <button type="button" class="btn btn-sm rounded-pill px-3 fw-bold {% if metrics.control_mode == 'manual' %}btn-warning text-dark{% else %}btn-light text-secondary{% endif %}" id="btnModeManual" onclick="setControlMode('manual')">
+        <i class="bi bi-hand-index me-1"></i>Manual Mode
+      </button>
+    </div>
+
     <button type="button" class="btn btn-light btn-sm rounded-pill px-3 border shadow-sm text-secondary" onclick="fetchLiveStatus()" title="Refresh Live Readings">
-      <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>Live Sync
+      <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>Sync
     </button>
   </div>
 </div>
 
-<!-- Top 6 KPI Summary Cards -->
+<!-- Dynamic Prominent Status Message Banner -->
+<div class="iris-card p-3 mb-4 border-2 shadow-sm" id="statusBannerCard" style="background: linear-gradient(135deg, #eff6ff 0%, #ffffff 100%); border-color: #3b82f6;">
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="rounded-3 p-3 d-flex align-items-center justify-content-center text-white shadow-sm" id="statusBannerIconBg" style="width: 52px; height: 52px; background: #2563eb;">
+        <i class="bi bi-broadcast fs-3" id="statusBannerIcon"></i>
+      </div>
+      <div>
+        <div class="d-flex flex-wrap align-items-center gap-2 mb-1">
+          <span class="fs-4 fw-bold text-dark" id="bannerStatusMessage">{{ metrics.status_message }}</span>
+          <span class="badge rounded-pill px-3 py-1 fw-bold {% if metrics.control_mode == 'auto' %}bg-success text-white{% else %}bg-warning text-dark{% endif %}" id="bannerModeBadge">
+            {% if metrics.control_mode == 'auto' %}<i class="bi bi-check-circle-fill me-1"></i>AUTOMATIC{% else %}<i class="bi bi-hand-index-thumb-fill me-1"></i>MANUAL OVERRIDE{% endif %}
+          </span>
+        </div>
+        <div class="small text-muted" id="bannerStatusDetail">
+          {{ metrics.status_detail }}
+        </div>
+      </div>
+    </div>
+
+    <!-- Quick Manual Override Actions (Visible when in manual mode or for quick testing) -->
+    <div class="d-flex flex-wrap align-items-center gap-2">
+      <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(true)">
+        <i class="bi bi-power me-1"></i>All ON
+      </button>
+      <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(false)">
+        <i class="bi bi-slash-circle me-1"></i>All OFF
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Smart Automation Controls & Environmental Sensor Simulation -->
+<div class="iris-card mb-4 bg-light border">
+  <div class="p-3">
+    <div class="row g-3 align-items-center">
+      <!-- 1. Student Occupancy Control -->
+      <div class="col-lg-6 border-end-lg">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <label class="form-label small fw-bold text-secondary mb-0 d-flex align-items-center gap-1">
+            <i class="bi bi-people-fill text-primary"></i>STUDENT STRENGTH (ZONE RULES)
+          </label>
+          <span class="badge {% if metrics.is_student_override %}bg-warning-subtle text-warning-emphasis border border-warning-subtle{% else %}bg-primary-subtle text-primary border border-primary-subtle{% endif %} rounded-pill px-2 py-0" id="badgeStudentSource" style="font-size: 0.72rem;">
+            {% if metrics.is_student_override %}Demonstration Override{% else %}Live Barcode Attendance{% endif %}
+          </span>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <div class="input-group input-group-sm" style="width: 140px;">
+            <input type="number" class="form-control fw-bold text-center" id="inputStudentCount" value="{{ metrics.student_count }}" min="0" max="100" placeholder="0">
+            <button class="btn btn-primary" type="button" onclick="setStudentCount(document.getElementById('inputStudentCount').value)" title="Set Count">
+              Apply
+            </button>
+          </div>
+
+          <!-- Quick Occupancy Presets for Demonstrations -->
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary" onclick="setStudentCount(0)" title="0 Students -> All Zones OFF">0 (Off)</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="setStudentCount(6)" title="1-10 Students -> Zone 1 ON">6 (Z1)</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="setStudentCount(15)" title="11-20 Students -> Zones 1+2 ON">15 (Z1+Z2)</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="setStudentCount(25)" title="21+ Students -> Zones 1+2+3 ON">25 (All)</button>
+          </div>
+
+          <button type="button" class="btn btn-outline-primary btn-sm rounded-pill" onclick="setStudentCount(null)" title="Reset to Live Barcode Attendance Count">
+            <i class="bi bi-arrow-repeat me-1"></i>Reset to Live Scan
+          </button>
+        </div>
+        <div class="form-text small" style="font-size: 0.74rem;">
+          Rules: <strong>0</strong> &rarr; All OFF &bull; <strong>1&ndash;10</strong> &rarr; Zone 1 &bull; <strong>11&ndash;20</strong> &rarr; Zones 1+2 &bull; <strong>21+</strong> &rarr; Zones 1+2+3
+        </div>
+      </div>
+
+      <!-- 2. Temperature Sensor Simulation -->
+      <div class="col-lg-6">
+        <div class="d-flex align-items-center justify-content-between mb-2">
+          <label class="form-label small fw-bold text-secondary mb-0 d-flex align-items-center gap-1">
+            <i class="bi bi-thermometer-half text-danger"></i>CLASSROOM TEMPERATURE (FAN RULES)
+          </label>
+          <span class="badge bg-danger-subtle text-danger border border-danger-subtle rounded-pill px-2 py-0" id="badgeTempDisplay" style="font-size: 0.72rem;">
+            Current: <strong id="tempLabel">{{ metrics.temperature }}&deg;C</strong>
+          </span>
+        </div>
+
+        <div class="d-flex flex-wrap align-items-center gap-2">
+          <!-- Range Slider -->
+          <div class="d-flex align-items-center gap-2 flex-grow-1" style="min-width: 170px;">
+            <span class="small text-muted">18&deg;</span>
+            <input type="range" class="form-range" id="sliderTemp" min="18" max="38" step="0.5" value="{{ metrics.temperature }}" oninput="onTempSliderInput(this.value)" onchange="setTemperature(this.value)">
+            <span class="small text-muted">38&deg;</span>
+          </div>
+
+          <!-- Quick Temperature Presets -->
+          <div class="btn-group btn-group-sm" role="group">
+            <button type="button" class="btn btn-outline-secondary" onclick="setTemperature(22)" title="Below 24°C -> Fans OFF">22&deg;C (Fans OFF)</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="setTemperature(26)" title="24-27°C -> Fans Normal">26&deg;C (Normal)</button>
+            <button type="button" class="btn btn-outline-secondary" onclick="setTemperature(29)" title="Above 27°C -> Fans Full Power">29&deg;C (Full)</button>
+          </div>
+        </div>
+        <div class="form-text small" style="font-size: 0.74rem;">
+          Rules: <strong>&lt; 24&deg;C</strong> &rarr; Fans OFF &bull; <strong>24&ndash;27&deg;C</strong> &rarr; Fans Normal &bull; <strong>&gt; 27&deg;C</strong> &rarr; Fans Full Speed
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Dashboard Metrics Row: 8 High-Visibility KPI Cards -->
 <div class="row g-3 mb-4">
-  <!-- 1. Current Power Consumption -->
-  <div class="col-sm-6 col-xl-2">
+  <!-- 1. Current Student Count -->
+  <div class="col-6 col-md-3 col-xl">
     <div class="iris-card p-3 h-100">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="text-secondary small fw-bold text-uppercase">Current Load</span>
-        <div class="bg-primary-subtle text-primary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
-          <i class="bi bi-lightning-charge-fill"></i>
+        <span class="text-secondary small fw-bold text-uppercase">Students</span>
+        <div class="bg-primary-subtle text-primary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-people-fill"></i>
         </div>
       </div>
-      <div class="fs-3 fw-bold text-dark mb-1" id="kpiCurrentPower">{{ metrics.current_power_watts }} <span class="fs-6 fw-normal text-muted">W</span></div>
-      <div class="small text-muted d-flex align-items-center gap-1">
-        <span class="live-pulse"></span>
-        <span>Max: {{ metrics.max_power_watts }} W (3 Zones)</span>
+      <div class="fs-4 fw-bold text-dark mb-1" id="kpiStudentCount">{{ metrics.student_count }} <span class="fs-6 fw-normal text-muted">Inside</span></div>
+      <div class="small text-muted" id="kpiStudentSub">
+        {% if metrics.is_student_override %}<span class="text-warning">Demo Override</span>{% else %}Live Scanner{% endif %}
       </div>
     </div>
   </div>
 
-  <!-- 2. Today's Energy Consumption -->
-  <div class="col-sm-6 col-xl-2">
+  <!-- 2. Current Temperature -->
+  <div class="col-6 col-md-3 col-xl">
     <div class="iris-card p-3 h-100">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="text-secondary small fw-bold text-uppercase">Today's Energy</span>
-        <div class="bg-info-subtle text-info rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
-          <i class="bi bi-speedometer2"></i>
+        <span class="text-secondary small fw-bold text-uppercase">Temperature</span>
+        <div class="bg-danger-subtle text-danger rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-thermometer-half"></i>
         </div>
       </div>
-      <div class="fs-3 fw-bold text-primary mb-1" id="kpiTodayKwh">{{ metrics.today_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
-      <div class="small text-muted">Est. Cost: <strong class="text-dark" id="kpiTodayCost">&#8377;{{ metrics.today_cost }}</strong></div>
+      <div class="fs-4 fw-bold text-danger mb-1" id="kpiTemperature">{{ metrics.temperature }}&deg;C</div>
+      <div class="small text-muted" id="kpiTempRule">
+        {% if metrics.temperature < 24.0 %}Fans OFF (&lt;24&deg;C){% elif metrics.temperature <= 27.0 %}Fans Normal (24&ndash;27&deg;C){% else %}Fans Full (&gt;27&deg;C){% endif %}
+      </div>
     </div>
   </div>
 
-  <!-- 3. Energy Saved -->
-  <div class="col-sm-6 col-xl-2">
-    <div class="iris-card p-3 h-100 border-start border-4 border-success">
-      <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="text-success small fw-bold text-uppercase">Energy Saved</span>
-        <div class="bg-success-subtle text-success rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
-          <i class="bi bi-tree-fill"></i>
-        </div>
-      </div>
-      <div class="fs-3 fw-bold text-success mb-1" id="kpiSavedKwh">{{ metrics.saved_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
-      <div class="small text-success fw-semibold">Saved: <span id="kpiCostSaved">&#8377;{{ metrics.today_cost_saved }}</span></div>
-    </div>
-  </div>
-
-  <!-- 4. Active Zones -->
-  <div class="col-sm-6 col-xl-2">
+  <!-- 3. Active Zones -->
+  <div class="col-6 col-md-3 col-xl">
     <div class="iris-card p-3 h-100">
       <div class="d-flex align-items-center justify-content-between mb-2">
         <span class="text-secondary small fw-bold text-uppercase">Active Zones</span>
-        <div class="bg-warning-subtle text-warning rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+        <div class="bg-warning-subtle text-warning rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
           <i class="bi bi-grid-3x3-gap-fill"></i>
         </div>
       </div>
-      <div class="fs-3 fw-bold text-dark mb-1" id="kpiActiveZones">{{ metrics.active_zones_ratio }}</div>
-      <div class="small text-muted"><span id="kpiActivePercent">{{ (metrics.active_zones_count / 3 * 100) | round(0) | int }}%</span> classroom active</div>
+      <div class="fs-4 fw-bold text-dark mb-1" id="kpiActiveZones">{{ metrics.active_zones_ratio }}</div>
+      <div class="small text-muted"><span id="kpiActivePercent">{{ (metrics.active_zones_count / 3 * 100) | round(0) | int }}%</span> active load</div>
     </div>
   </div>
 
-  <!-- 5. Energy Saving Percentage -->
-  <div class="col-sm-6 col-xl-2">
+  <!-- 4. Fans ON -->
+  <div class="col-6 col-md-3 col-xl">
     <div class="iris-card p-3 h-100">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="text-secondary small fw-bold text-uppercase">Savings Rate</span>
-        <div class="bg-teal-subtle text-teal rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; background-color: #ccfbf1; color: #0f766e;">
-          <i class="bi bi-percent"></i>
+        <span class="text-secondary small fw-bold text-uppercase">Fans ON</span>
+        <div class="bg-info-subtle text-info rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-fan"></i>
         </div>
       </div>
-      <div class="fs-3 fw-bold text-teal mb-1" style="color: #0f766e;" id="kpiSavingPercentage">{{ metrics.saving_percentage }}%</div>
-      <div class="progress" style="height: 6px;">
-        <div class="progress-bar bg-success" id="kpiSavingBar" role="progressbar" style="width: {{ metrics.saving_percentage }}%;"></div>
+      <div class="fs-4 fw-bold text-info mb-1" id="kpiFansOn">{{ metrics.fans_ratio }}</div>
+      <div class="small text-muted">75W per fan</div>
+    </div>
+  </div>
+
+  <!-- 5. Lights ON -->
+  <div class="col-6 col-md-3 col-xl">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Lights ON</span>
+        <div class="bg-warning-subtle text-warning rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-lightbulb-fill"></i>
+        </div>
+      </div>
+      <div class="fs-4 fw-bold text-warning-emphasis mb-1" id="kpiLightsOn">{{ metrics.lights_ratio }}</div>
+      <div class="small text-muted">20W per light</div>
+    </div>
+  </div>
+
+  <!-- 6. Current Power Consumption -->
+  <div class="col-6 col-md-3 col-xl">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Power Load</span>
+        <div class="bg-primary-subtle text-primary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-lightning-charge-fill"></i>
+        </div>
+      </div>
+      <div class="fs-4 fw-bold text-dark mb-1" id="kpiCurrentPower">{{ metrics.current_power_watts }} <span class="fs-6 fw-normal text-muted">W</span></div>
+      <div class="small text-muted d-flex align-items-center gap-1">
+        <span class="live-pulse"></span>
+        <span>Max: {{ metrics.max_power_watts|int }} W</span>
       </div>
     </div>
   </div>
 
-  <!-- 6. Reference Baseline Max -->
-  <div class="col-sm-6 col-xl-2">
+  <!-- 7. Energy Consumed -->
+  <div class="col-6 col-md-3 col-xl">
     <div class="iris-card p-3 h-100">
       <div class="d-flex align-items-center justify-content-between mb-2">
-        <span class="text-secondary small fw-bold text-uppercase">Baseline Reference</span>
-        <div class="bg-secondary-subtle text-secondary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
-          <i class="bi bi-graph-up"></i>
+        <span class="text-secondary small fw-bold text-uppercase">Consumed</span>
+        <div class="bg-info-subtle text-info rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-speedometer2"></i>
         </div>
       </div>
-      <div class="fs-3 fw-bold text-secondary mb-1" id="kpiBaselineKwh">{{ metrics.baseline_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
-      <div class="small text-muted">Tariff: &#8377;{{ metrics.tariff_rate }}/kWh</div>
+      <div class="fs-4 fw-bold text-primary mb-1" id="kpiTodayKwh">{{ metrics.today_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
+      <div class="small text-muted">&#8377;<strong class="text-dark" id="kpiTodayCost">{{ metrics.today_cost }}</strong></div>
+    </div>
+  </div>
+
+  <!-- 8. Energy Saved -->
+  <div class="col-6 col-md-3 col-xl">
+    <div class="iris-card p-3 h-100 border-start border-4 border-success">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-success small fw-bold text-uppercase">Saved</span>
+        <div class="bg-success-subtle text-success rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 32px; height: 32px;">
+          <i class="bi bi-tree-fill"></i>
+        </div>
+      </div>
+      <div class="fs-4 fw-bold text-success mb-1" id="kpiSavedKwh">{{ metrics.saved_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
+      <div class="small text-success fw-semibold"><span id="kpiSavingPercentage">{{ metrics.saving_percentage }}%</span> Saved</div>
     </div>
   </div>
 </div>
@@ -127,12 +267,12 @@
   <div class="iris-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
     <div>
       <h6 class="iris-card-title mb-0">
-        <i class="bi bi-diagram-3-fill text-primary me-2"></i>Classroom Smart Power Zones
+        <i class="bi bi-diagram-3-fill text-primary me-2"></i>Classroom 3-Zone Smart Grid
       </h6>
-      <span class="text-muted small">Zone specifications: 3 Ceiling Fans (75W each) + 2 LED Lights (20W each) = 265W per zone</span>
+      <span class="text-muted small">Each zone: 3 Fans (75W each) + 2 Lights (20W each) &bull; Total Classroom: 9 Fans + 6 Lights = 795W Max</span>
     </div>
     <span class="badge bg-light text-dark border">
-      Reference Max Load: <strong>795 W</strong> (All 3 Zones ON)
+      Automated by Student Count &amp; Temperature
     </span>
   </div>
 
@@ -140,7 +280,7 @@
     <!-- Visual Blackboard Indicator -->
     <div class="text-center mb-3">
       <div class="blackboard-badge">
-        <i class="bi bi-easel2-fill me-1"></i> Lectern &bull; Smart Board Area (Front of Classroom)
+        <i class="bi bi-easel2-fill me-1"></i> Front of Classroom &bull; Lectern &bull; Smart Board
       </div>
     </div>
 
@@ -165,37 +305,42 @@
           <div class="p-3">
             <!-- Appliance Icons & Status Display -->
             <div class="bg-light rounded-3 p-3 mb-3 border">
+              <!-- Fans row -->
               <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
                 <div class="d-flex align-items-center gap-2">
-                  <div class="appliance-icon-fan {% if z.is_active %}active{% else %}inactive{% endif %}" id="fanIcon{{ z.zone_number }}">
+                  <div class="appliance-icon-fan {% if z.working_fans > 0 %}active{% else %}inactive{% endif %}" id="fanIcon{{ z.zone_number }}">
                     <i class="bi bi-fan"></i>
                   </div>
                   <div>
-                    <div class="fw-bold text-dark small">Ceiling Fans (75 W)</div>
+                    <div class="fw-bold text-dark small d-flex align-items-center gap-1">
+                      <span>3 Ceiling Fans (75 W)</span>
+                    </div>
                     <div class="text-muted" style="font-size: 0.75rem;">
-                      <span class="fw-semibold text-primary" id="fanCount{{ z.zone_number }}">{{ z.working_fans }}</span> of 3 operating
+                      <span class="fw-semibold text-primary" id="fanCount{{ z.zone_number }}">{{ z.working_fans }}</span> of 3 spinning &bull;
+                      <span class="badge bg-light text-dark border px-1" id="fanSpeedBadge{{ z.zone_number }}">{{ z.fan_status }}</span>
                     </div>
                   </div>
                 </div>
-                <span class="fw-bold small {% if z.is_active %}text-primary{% else %}text-muted{% endif %}" id="fanWatts{{ z.zone_number }}">
-                  {% if z.is_active %}{{ (z.fans_count * z.fan_power_watts) | round(0) | int }} W{% else %}0 W{% endif %}
+                <span class="fw-bold small {% if z.working_fans > 0 %}text-primary{% else %}text-muted{% endif %}" id="fanWatts{{ z.zone_number }}">
+                  {{ z.fan_watts }} W
                 </span>
               </div>
 
+              <!-- Lights row -->
               <div class="d-flex align-items-center justify-content-between">
                 <div class="d-flex align-items-center gap-2">
-                  <div class="appliance-icon-light {% if z.is_active %}active{% else %}inactive{% endif %}" id="lightIcon{{ z.zone_number }}">
+                  <div class="appliance-icon-light {% if z.working_lights > 0 %}active{% else %}inactive{% endif %}" id="lightIcon{{ z.zone_number }}">
                     <i class="bi bi-lightbulb-fill"></i>
                   </div>
                   <div>
-                    <div class="fw-bold text-dark small">LED Tube Lights (20 W)</div>
+                    <div class="fw-bold text-dark small">2 LED Tube Lights (20 W)</div>
                     <div class="text-muted" style="font-size: 0.75rem;">
-                      <span class="fw-semibold text-warning" id="lightCount{{ z.zone_number }}">{{ z.working_lights }}</span> of 2 illuminated
+                      <span class="fw-semibold text-warning" id="lightCount{{ z.zone_number }}">{{ z.working_lights }}</span> of 2 illuminated (ON in active zone)
                     </div>
                   </div>
                 </div>
-                <span class="fw-bold small {% if z.is_active %}text-warning{% else %}text-muted{% endif %}" id="lightWatts{{ z.zone_number }}">
-                  {% if z.is_active %}{{ (z.lights_count * z.light_power_watts) | round(0) | int }} W{% else %}0 W{% endif %}
+                <span class="fw-bold small {% if z.working_lights > 0 %}text-warning{% else %}text-muted{% endif %}" id="lightWatts{{ z.zone_number }}">
+                  {{ z.light_watts }} W
                 </span>
               </div>
             </div>
@@ -204,7 +349,7 @@
             <div class="row g-2 text-center mb-3">
               <div class="col-4">
                 <div class="p-2 rounded bg-light border">
-                  <div class="text-muted small fw-semibold" style="font-size: 0.7rem;">CURRENT POWER</div>
+                  <div class="text-muted small fw-semibold" style="font-size: 0.7rem;">ZONE LOAD</div>
                   <div class="fw-bold text-dark fs-6" id="zonePowerWatts{{ z.zone_number }}">{{ z.current_power_watts }} W</div>
                 </div>
               </div>
@@ -229,12 +374,12 @@
               {% if z.is_active %}
                 <button type="button" class="btn btn-zone-toggle btn-turn-off w-100 shadow-sm d-flex align-items-center justify-content-center gap-2" id="zoneBtn{{ z.zone_number }}" onclick="toggleZone({{ z.zone_number }})">
                   <i class="bi bi-power fs-5"></i>
-                  <span>TURN ZONE {{ z.zone_number }} OFF</span>
+                  <span>ZONE {{ z.zone_number }} &bull; TURN OFF</span>
                 </button>
               {% else %}
                 <button type="button" class="btn btn-zone-toggle btn-turn-on w-100 shadow-sm d-flex align-items-center justify-content-center gap-2" id="zoneBtn{{ z.zone_number }}" onclick="toggleZone({{ z.zone_number }})">
                   <i class="bi bi-power fs-5"></i>
-                  <span>TURN ZONE {{ z.zone_number }} ON</span>
+                  <span>ZONE {{ z.zone_number }} &bull; TURN ON</span>
                 </button>
               {% endif %}
             </div>
@@ -247,7 +392,7 @@
     <!-- Classroom Rear Label -->
     <div class="text-center mt-3">
       <span class="text-muted small">
-        <i class="bi bi-arrow-down-short"></i> Rear Seating &bull; Classroom Entrance Area
+        <i class="bi bi-arrow-down-short"></i> Rear Seating &bull; Classroom Entrance &bull; Door Area
       </span>
     </div>
   </div>
@@ -260,7 +405,7 @@
     <div class="iris-card h-100">
       <div class="iris-card-header d-flex align-items-center justify-content-between">
         <h6 class="iris-card-title mb-0">
-          <i class="bi bi-bar-chart-line-fill text-primary me-2"></i>Daily Energy Consumption & Savings Trend (7 Days)
+          <i class="bi bi-bar-chart-line-fill text-primary me-2"></i>Daily Energy Consumption &amp; Savings Trend (7 Days)
         </h6>
         <span class="badge bg-light text-muted border">Actual vs. Baseline (All 3 Zones ON)</span>
       </div>
@@ -312,7 +457,7 @@
   <div class="iris-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
     <div>
       <h6 class="iris-card-title mb-0">
-        <i class="bi bi-clock-history text-primary me-2"></i>Energy Consumption History & Audit Log
+        <i class="bi bi-clock-history text-primary me-2"></i>Energy Consumption History &amp; Audit Log
       </h6>
       <span class="text-muted small">Daily logs comparing actual classroom electricity consumption against full-zone baseline.</span>
     </div>
@@ -391,12 +536,8 @@
 
 {% block scripts %}
 <script>
-  // Initial state passed from backend
   let initialMetrics = {{ metrics | tojson }};
   let historyData = {{ history | tojson }};
-
-  // Local live timer intervals
-  let zoneTimers = {};
 
   function formatDuration(totalSeconds) {
     if (!totalSeconds || totalSeconds < 0) return '0s';
@@ -411,7 +552,7 @@
     return parts.join(' ');
   }
 
-  // Update local client timers every second
+  // Live timer tick
   function tickTimers() {
     document.querySelectorAll('.zone-timer').forEach(elem => {
       const isActive = parseInt(elem.getAttribute('data-active')) === 1;
@@ -424,7 +565,64 @@
   }
   setInterval(tickTimers, 1000);
 
-  // Toggle a single zone
+  // Set Control Mode: 'auto' | 'manual'
+  async function setControlMode(mode) {
+    try {
+      const response = await fetch('/api/energy/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ control_mode: mode })
+      });
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error changing mode:', err);
+    }
+  }
+
+  // Set Temperature
+  async function setTemperature(temp) {
+    document.getElementById('tempLabel').textContent = `${temp}°C`;
+    document.getElementById('sliderTemp').value = temp;
+    try {
+      const response = await fetch('/api/energy/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ temperature: parseFloat(temp) })
+      });
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error setting temperature:', err);
+    }
+  }
+
+  function onTempSliderInput(val) {
+    document.getElementById('tempLabel').textContent = `${val}°C`;
+  }
+
+  // Set Student Count (or null for live attendance)
+  async function setStudentCount(count) {
+    try {
+      const response = await fetch('/api/energy/settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manual_student_override: count })
+      });
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error setting student count:', err);
+    }
+  }
+
+  // Toggle single zone
   async function toggleZone(zoneNum) {
     const btn = document.getElementById(`zoneBtn${zoneNum}`);
     if (btn) btn.disabled = true;
@@ -463,7 +661,7 @@
     }
   }
 
-  // Fetch live status from backend
+  // Fetch status polling
   async function fetchLiveStatus() {
     const icon = document.getElementById('refreshIcon');
     if (icon) icon.classList.add('spin-icon');
@@ -483,21 +681,72 @@
     }
   }
 
-  // Update UI components dynamically
+  // Refresh entire UI
   function updateUIWithData(metrics, zones) {
-    // 1. KPI cards
-    document.getElementById('kpiCurrentPower').innerHTML = `${metrics.current_power_watts} <span class="fs-6 fw-normal text-muted">W</span>`;
-    document.getElementById('kpiTodayKwh').innerHTML = `${metrics.today_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
-    document.getElementById('kpiTodayCost').textContent = `₹${metrics.today_cost}`;
-    document.getElementById('kpiSavedKwh').innerHTML = `${metrics.saved_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
-    document.getElementById('kpiCostSaved').textContent = `₹${metrics.today_cost_saved}`;
+    // 1. Status Message Banner
+    document.getElementById('bannerStatusMessage').textContent = metrics.status_message;
+    document.getElementById('bannerStatusDetail').textContent = metrics.status_detail;
+    
+    const bannerBadge = document.getElementById('bannerModeBadge');
+    const bannerCard = document.getElementById('statusBannerCard');
+    const bannerIconBg = document.getElementById('statusBannerIconBg');
+
+    if (metrics.control_mode === 'auto') {
+      bannerBadge.className = 'badge rounded-pill px-3 py-1 fw-bold bg-success text-white';
+      bannerBadge.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>AUTOMATIC';
+      bannerCard.style.borderColor = '#3b82f6';
+      bannerIconBg.style.background = '#2563eb';
+
+      document.getElementById('btnModeAuto').className = 'btn btn-sm rounded-pill px-3 fw-bold btn-primary text-white';
+      document.getElementById('btnModeManual').className = 'btn btn-sm rounded-pill px-3 fw-bold btn-light text-secondary';
+    } else {
+      bannerBadge.className = 'badge rounded-pill px-3 py-1 fw-bold bg-warning text-dark';
+      bannerBadge.innerHTML = '<i class="bi bi-hand-index-thumb-fill me-1"></i>MANUAL OVERRIDE';
+      bannerCard.style.borderColor = '#f59e0b';
+      bannerIconBg.style.background = '#d97706';
+
+      document.getElementById('btnModeAuto').className = 'btn btn-sm rounded-pill px-3 fw-bold btn-light text-secondary';
+      document.getElementById('btnModeManual').className = 'btn btn-sm rounded-pill px-3 fw-bold btn-warning text-dark';
+    }
+
+    // 2. Controller fields
+    document.getElementById('inputStudentCount').value = metrics.student_count;
+    document.getElementById('tempLabel').textContent = `${metrics.temperature}°C`;
+    document.getElementById('sliderTemp').value = metrics.temperature;
+
+    const badgeSource = document.getElementById('badgeStudentSource');
+    if (metrics.is_student_override) {
+      badgeSource.className = 'badge bg-warning-subtle text-warning-emphasis border border-warning-subtle rounded-pill px-2 py-0';
+      badgeSource.textContent = 'Demonstration Override';
+      document.getElementById('kpiStudentSub').innerHTML = '<span class="text-warning">Demo Override</span>';
+    } else {
+      badgeSource.className = 'badge bg-primary-subtle text-primary border border-primary-subtle rounded-pill px-2 py-0';
+      badgeSource.textContent = 'Live Barcode Attendance';
+      document.getElementById('kpiStudentSub').textContent = 'Live Scanner';
+    }
+
+    // 3. KPI Cards
+    document.getElementById('kpiStudentCount').innerHTML = `${metrics.student_count} <span class="fs-6 fw-normal text-muted">Inside</span>`;
+    document.getElementById('kpiTemperature').textContent = `${metrics.temperature}°C`;
+
+    let tempRuleText = '';
+    if (metrics.temperature < 24.0) tempRuleText = 'Fans OFF (<24°C)';
+    else if (metrics.temperature <= 27.0) tempRuleText = 'Fans Normal (24–27°C)';
+    else tempRuleText = 'Fans Full (>27°C)';
+    document.getElementById('kpiTempRule').textContent = tempRuleText;
+
     document.getElementById('kpiActiveZones').textContent = metrics.active_zones_ratio;
     document.getElementById('kpiActivePercent').textContent = `${Math.round(metrics.active_zones_count / 3 * 100)}%`;
-    document.getElementById('kpiSavingPercentage').textContent = `${metrics.saving_percentage}%`;
-    document.getElementById('kpiSavingBar').style.width = `${metrics.saving_percentage}%`;
-    document.getElementById('kpiBaselineKwh').innerHTML = `${metrics.baseline_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+    document.getElementById('kpiFansOn').textContent = metrics.fans_ratio;
+    document.getElementById('kpiLightsOn').textContent = metrics.lights_ratio;
 
-    // 2. Today history table row
+    document.getElementById('kpiCurrentPower').innerHTML = `${metrics.current_power_watts} <span class="fs-6 fw-normal text-muted">W</span>`;
+    document.getElementById('kpiTodayKwh').innerHTML = `${metrics.today_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+    document.getElementById('kpiTodayCost').textContent = metrics.today_cost;
+    document.getElementById('kpiSavedKwh').innerHTML = `${metrics.saved_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+    document.getElementById('kpiSavingPercentage').textContent = `${metrics.saving_percentage}%`;
+
+    // 4. Table Row Update
     document.getElementById('histTodayOpHours').textContent = `${metrics.classroom_op_hours} hrs`;
     document.getElementById('histTodayKwh').textContent = `${metrics.today_kwh} kWh`;
     document.getElementById('histTodayBaseline').textContent = `${metrics.baseline_kwh} kWh`;
@@ -506,7 +755,7 @@
     document.getElementById('histTodayCost').textContent = metrics.today_cost;
     document.getElementById('histTodayCostSaved').textContent = metrics.today_cost_saved;
 
-    // 3. Update each zone card
+    // 5. Update Each Zone Card
     zones.forEach(z => {
       const zn = z.zone_number;
       const card = document.getElementById(`zoneCard${zn}`);
@@ -517,6 +766,7 @@
       const lightCount = document.getElementById(`lightCount${zn}`);
       const fanWatts = document.getElementById(`fanWatts${zn}`);
       const lightWatts = document.getElementById(`lightWatts${zn}`);
+      const fanSpeedBadge = document.getElementById(`fanSpeedBadge${zn}`);
       const zoneWatts = document.getElementById(`zonePowerWatts${zn}`);
       const zoneTimer = document.getElementById(`zoneTimer${zn}`);
       const zoneKwh = document.getElementById(`zoneKwh${zn}`);
@@ -528,35 +778,40 @@
         badge.className = 'badge bg-success px-3 py-1 rounded-pill';
         badge.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>OPERATING';
 
-        fanIcon.className = 'appliance-icon-fan active';
-        lightIcon.className = 'appliance-icon-light active';
-        fanCount.textContent = z.working_fans;
-        lightCount.textContent = z.working_lights;
-        fanWatts.textContent = `${Math.round(z.fans_count * z.fan_power_watts)} W`;
-        fanWatts.className = 'fw-bold small text-primary';
-        lightWatts.textContent = `${Math.round(z.lights_count * z.light_power_watts)} W`;
-        lightWatts.className = 'fw-bold small text-warning';
-
         btn.className = 'btn btn-zone-toggle btn-turn-off w-100 shadow-sm d-flex align-items-center justify-content-center gap-2';
-        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>TURN ZONE ${zn} OFF</span>`;
+        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>ZONE ${zn} &bull; TURN OFF</span>`;
       } else {
         card.classList.remove('zone-active');
         card.classList.add('zone-inactive');
         badge.className = 'badge bg-secondary px-3 py-1 rounded-pill';
         badge.textContent = 'OFF';
 
-        fanIcon.className = 'appliance-icon-fan inactive';
-        lightIcon.className = 'appliance-icon-light inactive';
-        fanCount.textContent = '0';
-        lightCount.textContent = '0';
-        fanWatts.textContent = '0 W';
-        fanWatts.className = 'fw-bold small text-muted';
-        lightWatts.textContent = '0 W';
-        lightWatts.className = 'fw-bold small text-muted';
-
         btn.className = 'btn btn-zone-toggle btn-turn-on w-100 shadow-sm d-flex align-items-center justify-content-center gap-2';
-        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>TURN ZONE ${zn} ON</span>`;
+        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>ZONE ${zn} &bull; TURN ON</span>`;
       }
+
+      // Fans status
+      if (z.working_fans > 0) {
+        fanIcon.className = 'appliance-icon-fan active';
+        fanWatts.className = 'fw-bold small text-primary';
+      } else {
+        fanIcon.className = 'appliance-icon-fan inactive';
+        fanWatts.className = 'fw-bold small text-muted';
+      }
+      fanCount.textContent = z.working_fans;
+      fanWatts.textContent = `${z.fan_watts} W`;
+      fanSpeedBadge.textContent = z.fan_status;
+
+      // Lights status
+      if (z.working_lights > 0) {
+        lightIcon.className = 'appliance-icon-light active';
+        lightWatts.className = 'fw-bold small text-warning';
+      } else {
+        lightIcon.className = 'appliance-icon-light inactive';
+        lightWatts.className = 'fw-bold small text-muted';
+      }
+      lightCount.textContent = z.working_lights;
+      lightWatts.textContent = `${z.light_watts} W`;
 
       zoneWatts.textContent = `${z.current_power_watts} W`;
       zoneTimer.setAttribute('data-active', z.is_active ? '1' : '0');
@@ -565,36 +820,32 @@
       zoneKwh.innerHTML = `${z.energy_kwh} <small style="font-size: 0.65rem;">kWh</small>`;
     });
 
-    // 4. Update charts
+    // 6. Update Charts
     updateCharts(metrics, zones);
   }
 
-  // Periodic polling every 5 seconds
+  // Polling every 5s
   setInterval(fetchLiveStatus, 5000);
 
-  // Initialize Charts
+  // Charts
   let trendChart, distChart;
 
   function initCharts() {
-    // 1. History Trend Chart (Bar Chart: Actual vs Baseline)
     const trendCtx = document.getElementById('energyTrendChart').getContext('2d');
     
-    // Build labels and values from history + today
     let labels = [];
     let actuals = [];
     let baselines = [];
     let saved = [];
 
-    // Reverse history to chronological order (oldest to newest)
     const chronoHistory = [...historyData].reverse();
     chronoHistory.forEach(h => {
-      labels.push(h.date.slice(5)); // 'MM-DD'
+      labels.push(h.date.slice(5));
       actuals.push(h.total_kwh);
       baselines.push(h.baseline_kwh);
       saved.push(h.saved_kwh);
     });
 
-    // Add Today
     labels.push('Today');
     actuals.push(initialMetrics.today_kwh);
     baselines.push(initialMetrics.baseline_kwh);
@@ -632,25 +883,14 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'top', labels: { boxWidth: 12 } },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return context.dataset.label + ': ' + context.parsed.y + ' kWh';
-              }
-            }
-          }
+          legend: { position: 'top', labels: { boxWidth: 12 } }
         },
         scales: {
-          y: {
-            beginAtZero: true,
-            title: { display: true, text: 'Energy (kWh)' }
-          }
+          y: { beginAtZero: true, title: { display: true, text: 'Energy (kWh)' } }
         }
       }
     });
 
-    // 2. Power Distribution Donut Chart
     const distCtx = document.getElementById('powerDistributionChart').getContext('2d');
     const z1Watts = initialMetrics.zones[0].current_power_watts;
     const z2Watts = initialMetrics.zones[1].current_power_watts;
@@ -672,16 +912,7 @@
         responsive: true,
         maintainAspectRatio: false,
         cutout: '70%',
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              label: function(context) {
-                return context.label + ': ' + context.raw + ' W';
-              }
-            }
-          }
-        }
+        plugins: { legend: { display: false } }
       }
     });
   }

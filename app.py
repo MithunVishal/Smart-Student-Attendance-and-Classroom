@@ -14,7 +14,8 @@ from database import (
     init_db, get_db_connection, get_dashboard_stats,
     get_attendance_records, get_all_students, record_attendance_scan,
     create_sample_avatar, get_energy_zones_status, toggle_energy_zone,
-    set_all_zones, get_energy_dashboard_metrics, get_energy_history
+    set_all_zones, get_energy_dashboard_metrics, get_energy_history,
+    get_energy_settings, update_energy_settings
 )
 from scanner import decode_base64_image, scan_barcodes_from_image, decode_barcode_from_file_bytes
 from reports import export_to_csv, export_to_excel, export_to_pdf
@@ -551,6 +552,33 @@ def api_energy_toggle_all():
 @login_required
 def api_energy_status():
     metrics = get_energy_dashboard_metrics()
+    return jsonify({
+        'success': True,
+        'metrics': metrics,
+        'zones': metrics['zones']
+    })
+
+@app.route('/api/energy/settings', methods=['POST'])
+@login_required
+def api_energy_settings():
+    data = request.get_json() or {}
+    control_mode = data.get('control_mode')
+    temperature = data.get('temperature')
+    override = data.get('manual_student_override', "NO_CHANGE")
+    
+    if override == "" or override is None:
+        override = None
+    elif override != "NO_CHANGE":
+        try:
+            override = int(override)
+        except ValueError:
+            override = None
+            
+    metrics = update_energy_settings(
+        control_mode=control_mode,
+        temperature=temperature,
+        manual_student_override=override
+    )
     return jsonify({
         'success': True,
         'metrics': metrics,

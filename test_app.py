@@ -146,7 +146,7 @@ class TestAttendanceSystem(unittest.TestCase):
         self.assertIn(b'Zone 1', res.data)
         self.assertIn(b'Zone 2', res.data)
         self.assertIn(b'Zone 3', res.data)
-        self.assertIn(b'795 W', res.data) # Reference Max
+        self.assertIn(b'795', res.data) # Reference Max
         
         # 3. Test /api/energy/status
         status_res = self.client.get('/api/energy/status')
@@ -180,6 +180,79 @@ class TestAttendanceSystem(unittest.TestCase):
         data_all = toggle_all.get_json()
         self.assertEqual(data_all['metrics']['current_power_watts'], 795.0)
         self.assertEqual(data_all['metrics']['active_zones_count'], 3)
+
+    def test_automatic_zone_and_temperature_control(self):
+        """Test the automated zone activation (by student strength) and fan control (by temperature)."""
+        self.client.post('/login', data={'username': 'admin', 'password': 'admin123'})
+
+        # 1. 0 Students -> All zones OFF
+        res0 = self.client.post('/api/energy/settings', json={
+            'control_mode': 'auto',
+            'temperature': 28.0,
+            'manual_student_override': 0
+        })
+        self.assertEqual(res0.status_code, 200)
+        d0 = res0.get_json()['metrics']
+        self.assertEqual(d0['active_zones_count'], 0)
+        self.assertEqual(d0['fans_on'], 0)
+        self.assertEqual(d0['lights_on'], 0)
+        self.assertEqual(d0['current_power_watts'], 0.0)
+
+        # 2. 6 Students (1–10) -> Zone 1 ON
+        res1 = self.client.post('/api/energy/settings', json={
+            'control_mode': 'auto',
+            'temperature': 28.0,
+            'manual_student_override': 6
+        })
+        d1 = res1.get_json()['metrics']
+        self.assertEqual(d1['active_zones_count'], 1)
+        self.assertEqual(d1['fans_on'], 3)
+        self.assertEqual(d1['lights_on'], 2)
+        self.assertEqual(d1['current_power_watts'], 265.0)
+
+        # 3. 15 Students (11–20) at 28°C -> Zones 1 + 2 ON, Fans Full Speed
+        res2 = self.client.post('/api/energy/settings', json={
+            'control_mode': 'auto',
+            'temperature': 28.0,
+            'manual_student_override': 15
+        })
+        d2 = res2.get_json()['metrics']
+        self.assertEqual(d2['active_zones_count'], 2)
+        self.assertEqual(d2['fans_on'], 6)
+        self.assertEqual(d2['lights_on'], 4)
+        self.assertEqual(d2['current_power_watts'], 530.0)
+        self.assertIn("2 Zones Active", d2['status_message'])
+        self.assertIn("15 Students", d2['status_message'])
+        self.assertIn("28°C", d2['status_message'])
+
+        # 4. Temperature below 24°C (e.g. 22°C) -> Fans must turn OFF, Lights stay ON!
+        res_cold = self.client.post('/api/energy/settings', json={
+            'control_mode': 'auto',
+            'temperature': 22.0,
+            'manual_student_override': 15
+        })
+        d_cold = res_cold.get_json()['metrics']
+        self.assertEqual(d_cold['active_zones_count'], 2)
+        self.assertEqual(d_cold['fans_on'], 0) # Fans OFF below 24°C
+        self.assertEqual(d_cold['lights_on'], 4) # Lights ON in active zones
+        self.assertEqual(d_cold['current_power_watts'], 80.0) # 2 zones * 40W lights = 80W
+
+        # 5. 25 Students (21+) at 30°C -> All 3 zones ON, 9 fans, 6 lights, 795W
+        res3 = self.client.post('/api/energy/settings', json={
+            'control_mode': 'auto',
+            'temperature': 30.0,
+            'manual_student_override': 25
+        })
+        d3 = res3.get_json()['metrics']
+        self.assertEqual(d3['active_zones_count'], 3)
+        self.assertEqual(d3['fans_on'], 9)
+        self.assertEqual(d3['lights_on'], 6)
+        self.assertEqual(d3['current_power_watts'], 795.0)
+
+        # 6. Mode Switch: Manual Mode
+        res_man = self.client.post('/api/energy/settings', json={'control_mode': 'manual'})
+        d_man = res_man.get_json()['metrics']
+        self.assertEqual(d_man['control_mode'], 'manual')
 
 if __name__ == '__main__':
     unittest.main()
