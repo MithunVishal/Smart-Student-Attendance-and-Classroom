@@ -1,0 +1,718 @@
+{% extends "base.html" %}
+
+{% block title %}Energy Management - Iris Smart Classroom{% endblock %}
+
+{% block content %}
+<div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3 mb-4">
+  <div>
+    <div class="d-flex align-items-center gap-2 mb-1">
+      <h3 class="fw-bold text-dark mb-0">Classroom Energy Management</h3>
+      <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-3 py-1 fw-bold">
+        <i class="bi bi-leaf-fill me-1"></i>ECO OPTIMIZED
+      </span>
+    </div>
+    <p class="text-muted small mb-0">
+      Real-time 3-zone electrical load monitoring, manual zone controls, and daily energy efficiency auditing.
+    </p>
+  </div>
+
+  <!-- Master Controls -->
+  <div class="d-flex flex-wrap align-items-center gap-2">
+    <button type="button" class="btn btn-outline-success btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(true)">
+      <i class="bi bi-power me-1"></i>Turn All ON
+    </button>
+    <button type="button" class="btn btn-outline-danger btn-sm rounded-pill px-3 fw-semibold shadow-sm" onclick="toggleAllZones(false)">
+      <i class="bi bi-slash-circle me-1"></i>Turn All OFF
+    </button>
+    <button type="button" class="btn btn-light btn-sm rounded-pill px-3 border shadow-sm text-secondary" onclick="fetchLiveStatus()" title="Refresh Live Readings">
+      <i class="bi bi-arrow-clockwise me-1" id="refreshIcon"></i>Live Sync
+    </button>
+  </div>
+</div>
+
+<!-- Top 6 KPI Summary Cards -->
+<div class="row g-3 mb-4">
+  <!-- 1. Current Power Consumption -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Current Load</span>
+        <div class="bg-primary-subtle text-primary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+          <i class="bi bi-lightning-charge-fill"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-dark mb-1" id="kpiCurrentPower">{{ metrics.current_power_watts }} <span class="fs-6 fw-normal text-muted">W</span></div>
+      <div class="small text-muted d-flex align-items-center gap-1">
+        <span class="live-pulse"></span>
+        <span>Max: {{ metrics.max_power_watts }} W (3 Zones)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Today's Energy Consumption -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Today's Energy</span>
+        <div class="bg-info-subtle text-info rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+          <i class="bi bi-speedometer2"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-primary mb-1" id="kpiTodayKwh">{{ metrics.today_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
+      <div class="small text-muted">Est. Cost: <strong class="text-dark" id="kpiTodayCost">&#8377;{{ metrics.today_cost }}</strong></div>
+    </div>
+  </div>
+
+  <!-- 3. Energy Saved -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100 border-start border-4 border-success">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-success small fw-bold text-uppercase">Energy Saved</span>
+        <div class="bg-success-subtle text-success rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+          <i class="bi bi-tree-fill"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-success mb-1" id="kpiSavedKwh">{{ metrics.saved_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
+      <div class="small text-success fw-semibold">Saved: <span id="kpiCostSaved">&#8377;{{ metrics.today_cost_saved }}</span></div>
+    </div>
+  </div>
+
+  <!-- 4. Active Zones -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Active Zones</span>
+        <div class="bg-warning-subtle text-warning rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+          <i class="bi bi-grid-3x3-gap-fill"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-dark mb-1" id="kpiActiveZones">{{ metrics.active_zones_ratio }}</div>
+      <div class="small text-muted"><span id="kpiActivePercent">{{ (metrics.active_zones_count / 3 * 100) | round(0) | int }}%</span> classroom active</div>
+    </div>
+  </div>
+
+  <!-- 5. Energy Saving Percentage -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Savings Rate</span>
+        <div class="bg-teal-subtle text-teal rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px; background-color: #ccfbf1; color: #0f766e;">
+          <i class="bi bi-percent"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-teal mb-1" style="color: #0f766e;" id="kpiSavingPercentage">{{ metrics.saving_percentage }}%</div>
+      <div class="progress" style="height: 6px;">
+        <div class="progress-bar bg-success" id="kpiSavingBar" role="progressbar" style="width: {{ metrics.saving_percentage }}%;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Reference Baseline Max -->
+  <div class="col-sm-6 col-xl-2">
+    <div class="iris-card p-3 h-100">
+      <div class="d-flex align-items-center justify-content-between mb-2">
+        <span class="text-secondary small fw-bold text-uppercase">Baseline Reference</span>
+        <div class="bg-secondary-subtle text-secondary rounded-circle p-2 d-flex align-items-center justify-content-center" style="width: 34px; height: 34px;">
+          <i class="bi bi-graph-up"></i>
+        </div>
+      </div>
+      <div class="fs-3 fw-bold text-secondary mb-1" id="kpiBaselineKwh">{{ metrics.baseline_kwh }} <span class="fs-6 fw-normal text-muted">kWh</span></div>
+      <div class="small text-muted">Tariff: &#8377;{{ metrics.tariff_rate }}/kWh</div>
+    </div>
+  </div>
+</div>
+
+<!-- Classroom Zones Layout & Interactive Controls -->
+<div class="iris-card mb-4">
+  <div class="iris-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+      <h6 class="iris-card-title mb-0">
+        <i class="bi bi-diagram-3-fill text-primary me-2"></i>Classroom Smart Power Zones
+      </h6>
+      <span class="text-muted small">Zone specifications: 3 Ceiling Fans (75W each) + 2 LED Lights (20W each) = 265W per zone</span>
+    </div>
+    <span class="badge bg-light text-dark border">
+      Reference Max Load: <strong>795 W</strong> (All 3 Zones ON)
+    </span>
+  </div>
+
+  <div class="p-3">
+    <!-- Visual Blackboard Indicator -->
+    <div class="text-center mb-3">
+      <div class="blackboard-badge">
+        <i class="bi bi-easel2-fill me-1"></i> Lectern &bull; Smart Board Area (Front of Classroom)
+      </div>
+    </div>
+
+    <!-- 3 Zone Cards Row -->
+    <div class="row g-3" id="zonesContainer">
+      {% for z in zones %}
+      <div class="col-lg-4">
+        <div class="zone-card {% if z.is_active %}zone-active{% else %}zone-inactive{% endif %}" id="zoneCard{{ z.zone_number }}">
+          <!-- Zone Header Strip -->
+          <div class="zone-header-strip">
+            <div class="d-flex align-items-center gap-2">
+              <span class="badge {% if z.is_active %}bg-primary{% else %}bg-secondary{% endif %} rounded-pill px-2 py-1">
+                Zone {{ z.zone_number }}
+              </span>
+              <h6 class="fw-bold mb-0 text-dark">{{ z.zone_name }}</h6>
+            </div>
+            <span class="badge {% if z.is_active %}bg-success{% else %}bg-secondary{% endif %} px-3 py-1 rounded-pill" id="zoneBadge{{ z.zone_number }}">
+              {% if z.is_active %}<i class="bi bi-check-circle-fill me-1"></i>OPERATING{% else %}OFF{% endif %}
+            </span>
+          </div>
+
+          <div class="p-3">
+            <!-- Appliance Icons & Status Display -->
+            <div class="bg-light rounded-3 p-3 mb-3 border">
+              <div class="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="appliance-icon-fan {% if z.is_active %}active{% else %}inactive{% endif %}" id="fanIcon{{ z.zone_number }}">
+                    <i class="bi bi-fan"></i>
+                  </div>
+                  <div>
+                    <div class="fw-bold text-dark small">Ceiling Fans (75 W)</div>
+                    <div class="text-muted" style="font-size: 0.75rem;">
+                      <span class="fw-semibold text-primary" id="fanCount{{ z.zone_number }}">{{ z.working_fans }}</span> of 3 operating
+                    </div>
+                  </div>
+                </div>
+                <span class="fw-bold small {% if z.is_active %}text-primary{% else %}text-muted{% endif %}" id="fanWatts{{ z.zone_number }}">
+                  {% if z.is_active %}{{ (z.fans_count * z.fan_power_watts) | round(0) | int }} W{% else %}0 W{% endif %}
+                </span>
+              </div>
+
+              <div class="d-flex align-items-center justify-content-between">
+                <div class="d-flex align-items-center gap-2">
+                  <div class="appliance-icon-light {% if z.is_active %}active{% else %}inactive{% endif %}" id="lightIcon{{ z.zone_number }}">
+                    <i class="bi bi-lightbulb-fill"></i>
+                  </div>
+                  <div>
+                    <div class="fw-bold text-dark small">LED Tube Lights (20 W)</div>
+                    <div class="text-muted" style="font-size: 0.75rem;">
+                      <span class="fw-semibold text-warning" id="lightCount{{ z.zone_number }}">{{ z.working_lights }}</span> of 2 illuminated
+                    </div>
+                  </div>
+                </div>
+                <span class="fw-bold small {% if z.is_active %}text-warning{% else %}text-muted{% endif %}" id="lightWatts{{ z.zone_number }}">
+                  {% if z.is_active %}{{ (z.lights_count * z.light_power_watts) | round(0) | int }} W{% else %}0 W{% endif %}
+                </span>
+              </div>
+            </div>
+
+            <!-- Metrics Grid for this zone -->
+            <div class="row g-2 text-center mb-3">
+              <div class="col-4">
+                <div class="p-2 rounded bg-light border">
+                  <div class="text-muted small fw-semibold" style="font-size: 0.7rem;">CURRENT POWER</div>
+                  <div class="fw-bold text-dark fs-6" id="zonePowerWatts{{ z.zone_number }}">{{ z.current_power_watts }} W</div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 rounded bg-light border">
+                  <div class="text-muted small fw-semibold" style="font-size: 0.7rem;">RUNTIME TODAY</div>
+                  <div class="fw-bold text-dark fs-6 zone-timer" data-zone="{{ z.zone_number }}" data-active="{{ 1 if z.is_active else 0 }}" data-seconds="{{ z.operating_seconds }}" id="zoneTimer{{ z.zone_number }}">
+                    {{ z.operating_time_formatted }}
+                  </div>
+                </div>
+              </div>
+              <div class="col-4">
+                <div class="p-2 rounded bg-light border">
+                  <div class="text-muted small fw-semibold" style="font-size: 0.7rem;">ENERGY USED</div>
+                  <div class="fw-bold text-primary fs-6" id="zoneKwh{{ z.zone_number }}">{{ z.energy_kwh }} <small style="font-size: 0.65rem;">kWh</small></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Manual ON/OFF Button -->
+            <div>
+              {% if z.is_active %}
+                <button type="button" class="btn btn-zone-toggle btn-turn-off w-100 shadow-sm d-flex align-items-center justify-content-center gap-2" id="zoneBtn{{ z.zone_number }}" onclick="toggleZone({{ z.zone_number }})">
+                  <i class="bi bi-power fs-5"></i>
+                  <span>TURN ZONE {{ z.zone_number }} OFF</span>
+                </button>
+              {% else %}
+                <button type="button" class="btn btn-zone-toggle btn-turn-on w-100 shadow-sm d-flex align-items-center justify-content-center gap-2" id="zoneBtn{{ z.zone_number }}" onclick="toggleZone({{ z.zone_number }})">
+                  <i class="bi bi-power fs-5"></i>
+                  <span>TURN ZONE {{ z.zone_number }} ON</span>
+                </button>
+              {% endif %}
+            </div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Classroom Rear Label -->
+    <div class="text-center mt-3">
+      <span class="text-muted small">
+        <i class="bi bi-arrow-down-short"></i> Rear Seating &bull; Classroom Entrance Area
+      </span>
+    </div>
+  </div>
+</div>
+
+<!-- Charts & Analytics Section -->
+<div class="row g-4 mb-4">
+  <!-- Energy Consumption vs Baseline History Chart -->
+  <div class="col-lg-8">
+    <div class="iris-card h-100">
+      <div class="iris-card-header d-flex align-items-center justify-content-between">
+        <h6 class="iris-card-title mb-0">
+          <i class="bi bi-bar-chart-line-fill text-primary me-2"></i>Daily Energy Consumption & Savings Trend (7 Days)
+        </h6>
+        <span class="badge bg-light text-muted border">Actual vs. Baseline (All 3 Zones ON)</span>
+      </div>
+      <div class="p-3">
+        <div style="height: 280px;">
+          <canvas id="energyTrendChart"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Zone Power Distribution Donut Chart -->
+  <div class="col-lg-4">
+    <div class="iris-card h-100">
+      <div class="iris-card-header">
+        <h6 class="iris-card-title mb-0">
+          <i class="bi bi-pie-chart-fill text-indigo me-2"></i>Current Load Distribution
+        </h6>
+      </div>
+      <div class="p-3 d-flex flex-column align-items-center justify-content-center">
+        <div style="width: 210px; height: 210px; position: relative;">
+          <canvas id="powerDistributionChart"></canvas>
+        </div>
+        <div class="mt-3 w-100">
+          <div class="d-flex justify-content-between small text-muted border-bottom py-1">
+            <span><i class="bi bi-circle-fill text-primary me-1" style="font-size: 0.6rem;"></i>Zone 1</span>
+            <span class="fw-bold text-dark" id="distZone1">{{ zones[0].current_power_watts }} W</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted border-bottom py-1">
+            <span><i class="bi bi-circle-fill text-info me-1" style="font-size: 0.6rem;"></i>Zone 2</span>
+            <span class="fw-bold text-dark" id="distZone2">{{ zones[1].current_power_watts }} W</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted border-bottom py-1">
+            <span><i class="bi bi-circle-fill text-warning me-1" style="font-size: 0.6rem;"></i>Zone 3</span>
+            <span class="fw-bold text-dark" id="distZone3">{{ zones[2].current_power_watts }} W</span>
+          </div>
+          <div class="d-flex justify-content-between small text-muted py-1">
+            <span><i class="bi bi-circle-fill text-success me-1" style="font-size: 0.6rem;"></i>Power Saved</span>
+            <span class="fw-bold text-success" id="distSaved">{{ (metrics.max_power_watts - metrics.current_power_watts) | round(1) }} W</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Energy History Section -->
+<div class="iris-card">
+  <div class="iris-card-header d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <div>
+      <h6 class="iris-card-title mb-0">
+        <i class="bi bi-clock-history text-primary me-2"></i>Energy Consumption History & Audit Log
+      </h6>
+      <span class="text-muted small">Daily logs comparing actual classroom electricity consumption against full-zone baseline.</span>
+    </div>
+    <span class="badge bg-light text-dark border">
+      Tariff Rate: &#8377;{{ metrics.tariff_rate }} / kWh
+    </span>
+  </div>
+
+  <div class="table-responsive">
+    <table class="iris-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Operating Time</th>
+          <th>Actual Consumed</th>
+          <th>Reference Baseline (3 Zones)</th>
+          <th>Energy Saved</th>
+          <th>Saving %</th>
+          <th>Electricity Cost</th>
+          <th>Cost Saved</th>
+          <th>Operation Notes</th>
+        </tr>
+      </thead>
+      <tbody id="energyHistoryTableBody">
+        <!-- Today's Live Row -->
+        <tr class="table-primary-subtle fw-semibold" style="background-color: #f0f7ff;">
+          <td>
+            <span class="badge bg-primary rounded-pill me-1">Today</span>
+            <span>{{ today_date }}</span>
+          </td>
+          <td id="histTodayOpHours">{{ metrics.classroom_op_hours }} hrs</td>
+          <td class="text-primary fw-bold" id="histTodayKwh">{{ metrics.today_kwh }} kWh</td>
+          <td class="text-muted" id="histTodayBaseline">{{ metrics.baseline_kwh }} kWh</td>
+          <td class="text-success fw-bold" id="histTodaySaved">+{{ metrics.saved_kwh }} kWh</td>
+          <td>
+            <span class="badge bg-success text-white rounded-pill px-2 py-1" id="histTodayPercent">
+              {{ metrics.saving_percentage }}% Saved
+            </span>
+          </td>
+          <td>&#8377;<span id="histTodayCost">{{ metrics.today_cost }}</span></td>
+          <td class="text-success fw-bold">&#8377;<span id="histTodayCostSaved">{{ metrics.today_cost_saved }}</span></td>
+          <td><span class="small text-muted"><i class="bi bi-broadcast text-primary me-1"></i>Active session in progress</span></td>
+        </tr>
+
+        <!-- Historical Days -->
+        {% if history %}
+          {% for h in history %}
+          <tr>
+            <td><span class="fw-semibold text-dark">{{ h.date }}</span></td>
+            <td>{{ h.operating_hours }} hrs</td>
+            <td class="fw-bold text-dark">{{ h.total_kwh }} kWh</td>
+            <td class="text-muted">{{ h.baseline_kwh }} kWh</td>
+            <td class="text-success fw-bold">+{{ h.saved_kwh }} kWh</td>
+            <td>
+              <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill px-2 py-1">
+                {{ h.saving_percentage }}%
+              </span>
+            </td>
+            <td>&#8377;{{ h.cost_consumed }}</td>
+            <td class="text-success fw-bold">&#8377;{{ h.cost_saved }}</td>
+            <td><span class="small text-muted">{{ h.notes or 'Standard classroom schedule' }}</span></td>
+          </tr>
+          {% endfor %}
+        {% else %}
+          <tr>
+            <td colspan="9" class="text-center py-4 text-muted">
+              No historical records found. Daily metrics will be archived automatically.
+            </td>
+          </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  // Initial state passed from backend
+  let initialMetrics = {{ metrics | tojson }};
+  let historyData = {{ history | tojson }};
+
+  // Local live timer intervals
+  let zoneTimers = {};
+
+  function formatDuration(totalSeconds) {
+    if (!totalSeconds || totalSeconds < 0) return '0s';
+    const hours = Math.floor(totalSeconds / 3600);
+    const minutes = Math.floor((totalSeconds % 3600) / 60);
+    const seconds = totalSeconds % 60;
+    
+    let parts = [];
+    if (hours > 0) parts.push(hours + 'h');
+    if (minutes > 0 || hours > 0) parts.push(minutes + 'm');
+    parts.push(seconds + 's');
+    return parts.join(' ');
+  }
+
+  // Update local client timers every second
+  function tickTimers() {
+    document.querySelectorAll('.zone-timer').forEach(elem => {
+      const isActive = parseInt(elem.getAttribute('data-active')) === 1;
+      if (isActive) {
+        let sec = parseInt(elem.getAttribute('data-seconds')) + 1;
+        elem.setAttribute('data-seconds', sec);
+        elem.textContent = formatDuration(sec);
+      }
+    });
+  }
+  setInterval(tickTimers, 1000);
+
+  // Toggle a single zone
+  async function toggleZone(zoneNum) {
+    const btn = document.getElementById(`zoneBtn${zoneNum}`);
+    if (btn) btn.disabled = true;
+
+    try {
+      const response = await fetch('/api/energy/toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ zone_number: zoneNum })
+      });
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error toggling zone:', err);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  // Toggle all zones
+  async function toggleAllZones(state) {
+    try {
+      const response = await fetch('/api/energy/toggle_all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ state: state })
+      });
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error toggling all zones:', err);
+    }
+  }
+
+  // Fetch live status from backend
+  async function fetchLiveStatus() {
+    const icon = document.getElementById('refreshIcon');
+    if (icon) icon.classList.add('spin-icon');
+    
+    try {
+      const response = await fetch('/api/energy/status');
+      const data = await response.json();
+      if (data.success) {
+        updateUIWithData(data.metrics, data.zones);
+      }
+    } catch (err) {
+      console.error('Error syncing status:', err);
+    } finally {
+      setTimeout(() => {
+        if (icon) icon.classList.remove('spin-icon');
+      }, 400);
+    }
+  }
+
+  // Update UI components dynamically
+  function updateUIWithData(metrics, zones) {
+    // 1. KPI cards
+    document.getElementById('kpiCurrentPower').innerHTML = `${metrics.current_power_watts} <span class="fs-6 fw-normal text-muted">W</span>`;
+    document.getElementById('kpiTodayKwh').innerHTML = `${metrics.today_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+    document.getElementById('kpiTodayCost').textContent = `₹${metrics.today_cost}`;
+    document.getElementById('kpiSavedKwh').innerHTML = `${metrics.saved_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+    document.getElementById('kpiCostSaved').textContent = `₹${metrics.today_cost_saved}`;
+    document.getElementById('kpiActiveZones').textContent = metrics.active_zones_ratio;
+    document.getElementById('kpiActivePercent').textContent = `${Math.round(metrics.active_zones_count / 3 * 100)}%`;
+    document.getElementById('kpiSavingPercentage').textContent = `${metrics.saving_percentage}%`;
+    document.getElementById('kpiSavingBar').style.width = `${metrics.saving_percentage}%`;
+    document.getElementById('kpiBaselineKwh').innerHTML = `${metrics.baseline_kwh} <span class="fs-6 fw-normal text-muted">kWh</span>`;
+
+    // 2. Today history table row
+    document.getElementById('histTodayOpHours').textContent = `${metrics.classroom_op_hours} hrs`;
+    document.getElementById('histTodayKwh').textContent = `${metrics.today_kwh} kWh`;
+    document.getElementById('histTodayBaseline').textContent = `${metrics.baseline_kwh} kWh`;
+    document.getElementById('histTodaySaved').textContent = `+${metrics.saved_kwh} kWh`;
+    document.getElementById('histTodayPercent').textContent = `${metrics.saving_percentage}% Saved`;
+    document.getElementById('histTodayCost').textContent = metrics.today_cost;
+    document.getElementById('histTodayCostSaved').textContent = metrics.today_cost_saved;
+
+    // 3. Update each zone card
+    zones.forEach(z => {
+      const zn = z.zone_number;
+      const card = document.getElementById(`zoneCard${zn}`);
+      const badge = document.getElementById(`zoneBadge${zn}`);
+      const fanIcon = document.getElementById(`fanIcon${zn}`);
+      const lightIcon = document.getElementById(`lightIcon${zn}`);
+      const fanCount = document.getElementById(`fanCount${zn}`);
+      const lightCount = document.getElementById(`lightCount${zn}`);
+      const fanWatts = document.getElementById(`fanWatts${zn}`);
+      const lightWatts = document.getElementById(`lightWatts${zn}`);
+      const zoneWatts = document.getElementById(`zonePowerWatts${zn}`);
+      const zoneTimer = document.getElementById(`zoneTimer${zn}`);
+      const zoneKwh = document.getElementById(`zoneKwh${zn}`);
+      const btn = document.getElementById(`zoneBtn${zn}`);
+
+      if (z.is_active) {
+        card.classList.remove('zone-inactive');
+        card.classList.add('zone-active');
+        badge.className = 'badge bg-success px-3 py-1 rounded-pill';
+        badge.innerHTML = '<i class="bi bi-check-circle-fill me-1"></i>OPERATING';
+
+        fanIcon.className = 'appliance-icon-fan active';
+        lightIcon.className = 'appliance-icon-light active';
+        fanCount.textContent = z.working_fans;
+        lightCount.textContent = z.working_lights;
+        fanWatts.textContent = `${Math.round(z.fans_count * z.fan_power_watts)} W`;
+        fanWatts.className = 'fw-bold small text-primary';
+        lightWatts.textContent = `${Math.round(z.lights_count * z.light_power_watts)} W`;
+        lightWatts.className = 'fw-bold small text-warning';
+
+        btn.className = 'btn btn-zone-toggle btn-turn-off w-100 shadow-sm d-flex align-items-center justify-content-center gap-2';
+        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>TURN ZONE ${zn} OFF</span>`;
+      } else {
+        card.classList.remove('zone-active');
+        card.classList.add('zone-inactive');
+        badge.className = 'badge bg-secondary px-3 py-1 rounded-pill';
+        badge.textContent = 'OFF';
+
+        fanIcon.className = 'appliance-icon-fan inactive';
+        lightIcon.className = 'appliance-icon-light inactive';
+        fanCount.textContent = '0';
+        lightCount.textContent = '0';
+        fanWatts.textContent = '0 W';
+        fanWatts.className = 'fw-bold small text-muted';
+        lightWatts.textContent = '0 W';
+        lightWatts.className = 'fw-bold small text-muted';
+
+        btn.className = 'btn btn-zone-toggle btn-turn-on w-100 shadow-sm d-flex align-items-center justify-content-center gap-2';
+        btn.innerHTML = `<i class="bi bi-power fs-5"></i><span>TURN ZONE ${zn} ON</span>`;
+      }
+
+      zoneWatts.textContent = `${z.current_power_watts} W`;
+      zoneTimer.setAttribute('data-active', z.is_active ? '1' : '0');
+      zoneTimer.setAttribute('data-seconds', z.operating_seconds);
+      zoneTimer.textContent = z.operating_time_formatted;
+      zoneKwh.innerHTML = `${z.energy_kwh} <small style="font-size: 0.65rem;">kWh</small>`;
+    });
+
+    // 4. Update charts
+    updateCharts(metrics, zones);
+  }
+
+  // Periodic polling every 5 seconds
+  setInterval(fetchLiveStatus, 5000);
+
+  // Initialize Charts
+  let trendChart, distChart;
+
+  function initCharts() {
+    // 1. History Trend Chart (Bar Chart: Actual vs Baseline)
+    const trendCtx = document.getElementById('energyTrendChart').getContext('2d');
+    
+    // Build labels and values from history + today
+    let labels = [];
+    let actuals = [];
+    let baselines = [];
+    let saved = [];
+
+    // Reverse history to chronological order (oldest to newest)
+    const chronoHistory = [...historyData].reverse();
+    chronoHistory.forEach(h => {
+      labels.push(h.date.slice(5)); // 'MM-DD'
+      actuals.push(h.total_kwh);
+      baselines.push(h.baseline_kwh);
+      saved.push(h.saved_kwh);
+    });
+
+    // Add Today
+    labels.push('Today');
+    actuals.push(initialMetrics.today_kwh);
+    baselines.push(initialMetrics.baseline_kwh);
+    saved.push(initialMetrics.saved_kwh);
+
+    trendChart = new Chart(trendCtx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Actual Consumed (kWh)',
+            data: actuals,
+            backgroundColor: '#2563eb',
+            borderRadius: 6
+          },
+          {
+            label: 'Energy Saved (kWh)',
+            data: saved,
+            backgroundColor: '#10b981',
+            borderRadius: 6
+          },
+          {
+            label: 'Max Baseline (kWh)',
+            data: baselines,
+            type: 'line',
+            borderColor: '#94a3b8',
+            borderDash: [5, 5],
+            pointRadius: 3,
+            fill: false
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { position: 'top', labels: { boxWidth: 12 } },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.dataset.label + ': ' + context.parsed.y + ' kWh';
+              }
+            }
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true,
+            title: { display: true, text: 'Energy (kWh)' }
+          }
+        }
+      }
+    });
+
+    // 2. Power Distribution Donut Chart
+    const distCtx = document.getElementById('powerDistributionChart').getContext('2d');
+    const z1Watts = initialMetrics.zones[0].current_power_watts;
+    const z2Watts = initialMetrics.zones[1].current_power_watts;
+    const z3Watts = initialMetrics.zones[2].current_power_watts;
+    const savedWatts = Math.max(0, initialMetrics.max_power_watts - initialMetrics.current_power_watts);
+
+    distChart = new Chart(distCtx, {
+      type: 'doughnut',
+      data: {
+        labels: ['Zone 1', 'Zone 2', 'Zone 3', 'Power Saved'],
+        datasets: [{
+          data: [z1Watts, z2Watts, z3Watts, savedWatts],
+          backgroundColor: ['#2563eb', '#06b6d4', '#f59e0b', '#10b981'],
+          borderWidth: 2,
+          borderColor: '#ffffff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '70%',
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            callbacks: {
+              label: function(context) {
+                return context.label + ': ' + context.raw + ' W';
+              }
+            }
+          }
+        }
+      }
+    });
+  }
+
+  function updateCharts(metrics, zones) {
+    if (distChart) {
+      const z1 = zones[0].current_power_watts;
+      const z2 = zones[1].current_power_watts;
+      const z3 = zones[2].current_power_watts;
+      const saved = Math.max(0, metrics.max_power_watts - metrics.current_power_watts);
+
+      distChart.data.datasets[0].data = [z1, z2, z3, saved];
+      distChart.update();
+
+      document.getElementById('distZone1').textContent = `${z1} W`;
+      document.getElementById('distZone2').textContent = `${z2} W`;
+      document.getElementById('distZone3').textContent = `${z3} W`;
+      document.getElementById('distSaved').textContent = `${saved.toFixed(1)} W`;
+    }
+
+    if (trendChart) {
+      const lastIndex = trendChart.data.labels.length - 1;
+      trendChart.data.datasets[0].data[lastIndex] = metrics.today_kwh;
+      trendChart.data.datasets[1].data[lastIndex] = metrics.saved_kwh;
+      trendChart.data.datasets[2].data[lastIndex] = metrics.baseline_kwh;
+      trendChart.update();
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initCharts();
+  });
+</script>
+{% endblock %}

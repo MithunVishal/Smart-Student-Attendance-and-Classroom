@@ -110,6 +110,10 @@ def init_db():
                 cursor.execute("UPDATE students SET barcode_image_path = ? WHERE id = ?", (img, s['id']))
                 break
     conn.commit()
+    
+    # Initialize energy management zones & historical tables
+    init_energy_tables(cursor, conn)
+    
     conn.close()
 
 def create_sample_avatar(name: str, bg_color: tuple = (30, 64, 175), text_color: tuple = (255, 255, 255)) -> str:
@@ -407,3 +411,316 @@ def get_all_students(search: str = None, department: str = None):
     students = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return students
+
+# ==========================================
+# ENERGY MANAGEMENT & CLASSROOM ZONES
+# ==========================================
+
+FAN_DEFAULT_WATTS = 75.0
+LIGHT_DEFAULT_WATTS = 20.0
+TARIFF_PER_KWH = 8.00  # Standard institutional rate in INR (or currency units)
+
+def init_energy_tables(cursor, conn):
+    """Initializes the energy zones and energy history tables with default zones and past trends."""
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS energy_zones (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        zone_number INTEGER UNIQUE NOT NULL,
+        zone_name TEXT NOT NULL,
+        is_active INTEGER DEFAULT 0,
+        fans_count INTEGER DEFAULT 3,
+        lights_count INTEGER DEFAULT 2,
+        fan_power_watts REAL DEFAULT 75.0,
+        light_power_watts REAL DEFAULT 20.0,
+        last_turned_on TEXT,
+        total_operating_seconds_today INTEGER DEFAULT 0,
+        total_kwh_today REAL DEFAULT 0.0,
+        last_date TEXT,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS energy_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT UNIQUE NOT NULL,
+        total_kwh REAL NOT NULL DEFAULT 0.0,
+        baseline_kwh REAL NOT NULL DEFAULT 0.0,
+        saved_kwh REAL NOT NULL DEFAULT 0.0,
+        saving_percentage REAL NOT NULL DEFAULT 0.0,
+        cost_consumed REAL NOT NULL DEFAULT 0.0,
+        cost_saved REAL NOT NULL DEFAULT 0.0,
+        operating_hours REAL NOT NULL DEFAULT 0.0,
+        notes TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+    conn.commit()
+    
+    today_str = date.today().strftime('%Y-%m-%d')
+    
+    # Seed 3 default classroom zones if not yet existing
+    cursor.execute("SELECT COUNT(*) as count FROM energy_zones")
+    row = cursor.fetchone()
+    if row and row['count'] == 0:
+        default_zones = [
+            (1, "Zone 1 (Front Row / Lectern)", 1, 3, 2, 75.0, 20.0, 5400),
+            (2, "Zone 2 (Middle Classroom)", 1, 3, 2, 75.0, 20.0, 4800),
+            (3, "Zone 3 (Rear Classroom)", 0, 3, 2, 75.0, 20.0, 0)
+        ]
+        for zn, name, active, fans, lights, fp, lp, op_sec in default_zones:
+            zone_watts = (fans * fp) + (lights * lp) # 265W
+            kwh = round((zone_watts * (op_sec / 3600.0)) / 1000.0, 4)
+            last_on = datetime.now().isoformat() if active else None
+            cursor.execute("""
+            INSERT INTO energy_zones (
+                zone_number, zone_name, is_active, fans_count, lights_count,
+                fan_power_watts, light_power_watts, last_turned_on,
+                total_operating_seconds_today, total_kwh_today, last_date
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (zn, name, active, fans, lights, fp, lp, last_on, op_sec, kwh, today_str))
+        conn.commit()
+
+    # Seed realistic 7-day history if empty
+    cursor.execute("SELECT COUNT(*) as count FROM energy_history")
+    h_row = cursor.fetchone()
+    if h_row and h_row['count'] == 0:
+        sample_days = [
+            (6, 6.5, 0.67, "Zone 3 kept OFF during morning classes. 33.3% energy saved vs full baseline."),
+            (5, 7.0, 0.60, "Zone 1 & 2 operated continuously; Zone 3 activated only during afternoon lab."),
+            (4, 6.0, 0.55, "Smart zone efficiency active; reduced load for small batches."),
+            (3, 7.5, 0.70, "Full day lectures; rear zone managed dynamically according to student count."),
+            (2, 5.5, 0.50, "Half-day seminar; only Zone 1 utilized for front seating."),
+            (1, 6.0, 0.65, "Regular classroom schedule; energy savings recorded.")
+        ]
+        for days_ago, op_hours, ratio, note in sample_days:
+            past_date = (date.today() - timedelta(days=days_ago)).strftime('%Y-%m-%d')
+            base_kwh = round(0.795 * op_hours, 2)
+            act_kwh = round(base_kwh * ratio, 2)
+            sv_kwh = round(base_kwh - act_kwh, 2)
+            sv_pct = round((sv_kwh / base_kwh) * 100.0, 1) if base_kwh > 0 else 0.0
+            cost_c = round(act_kwh * TARIFF_PER_KWH, 2)
+            cost_s = round(sv_kwh * TARIFF_PER_KWH, 2)
+            cursor.execute("""
+            INSERT OR IGNORE INTO energy_history
+            (date, total_kwh, baseline_kwh, saved_kwh, saving_percentage, cost_consumed, cost_saved, operating_hours, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (past_date, act_kwh, base_kwh, sv_kwh, sv_pct, cost_c, cost_s, op_hours, note))
+        conn.commit()
+
+def check_and_rollover_energy_day(conn):
+    """Checks if the date has changed since the last recorded energy operation and archives daily metrics."""
+    today_str = date.today().strftime('%Y-%m-%d')
+    cursor = conn.cursor()
+    cursor.execute("SELECT last_date FROM energy_zones WHERE last_date IS NOT NULL LIMIT 1")
+    row = cursor.fetchone()
+    if row and row['last_date'] and row['last_date'] != today_str:
+        old_date = row['last_date']
+        # Archive yesterday's data into energy_history
+        cursor.execute("SELECT SUM(total_kwh_today) as total_kwh, MAX(total_operating_seconds_today) as max_sec FROM energy_zones")
+        summary = cursor.fetchone()
+        if summary and summary['total_kwh'] is not None:
+            act_kwh = round(summary['total_kwh'], 2)
+            max_sec = summary['max_sec'] or 0
+            op_hours = round(max_sec / 3600.0, 2)
+            base_kwh = round(0.795 * max(op_hours, 1.0), 2)
+            if base_kwh < act_kwh:
+                base_kwh = act_kwh
+            sv_kwh = round(base_kwh - act_kwh, 2)
+            sv_pct = round((sv_kwh / base_kwh) * 100.0, 1) if base_kwh > 0 else 0.0
+            cost_c = round(act_kwh * TARIFF_PER_KWH, 2)
+            cost_s = round(sv_kwh * TARIFF_PER_KWH, 2)
+            
+            cursor.execute("""
+            INSERT OR REPLACE INTO energy_history
+            (date, total_kwh, baseline_kwh, saved_kwh, saving_percentage, cost_consumed, cost_saved, operating_hours, notes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (old_date, act_kwh, base_kwh, sv_kwh, sv_pct, cost_c, cost_s, op_hours, "Daily classroom energy log"))
+        
+        # Reset zones for the new day
+        cursor.execute("""
+        UPDATE energy_zones
+        SET total_operating_seconds_today = 0,
+            total_kwh_today = 0.0,
+            last_date = ?,
+            last_turned_on = CASE WHEN is_active = 1 THEN ? ELSE NULL END
+        """, (today_str, datetime.now().isoformat()))
+        conn.commit()
+
+def get_energy_zones_status():
+    """Retrieves real-time status, live power, operating time, and kWh for each of the 3 zones."""
+    conn = get_db_connection()
+    check_and_rollover_energy_day(conn)
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM energy_zones ORDER BY zone_number ASC")
+    rows = cursor.fetchall()
+    now = datetime.now()
+    
+    zones = []
+    for r in rows:
+        z_dict = dict(r)
+        is_active = bool(z_dict['is_active'])
+        fp = float(z_dict['fan_power_watts'])
+        lp = float(z_dict['light_power_watts'])
+        fans = int(z_dict['fans_count'])
+        lights = int(z_dict['lights_count'])
+        
+        # Zone rated power when operating: 3 * 75 + 2 * 20 = 265 W
+        rated_zone_watts = (fans * fp) + (lights * lp)
+        
+        live_sec = int(z_dict['total_operating_seconds_today'] or 0)
+        live_kwh = float(z_dict['total_kwh_today'] or 0.0)
+        
+        if is_active and z_dict['last_turned_on']:
+            try:
+                last_on_dt = datetime.fromisoformat(z_dict['last_turned_on'])
+                elapsed = max(0, int((now - last_on_dt).total_seconds()))
+                live_sec += elapsed
+                live_kwh += (rated_zone_watts * (elapsed / 3600.0)) / 1000.0
+            except Exception:
+                pass
+                
+        working_fans = fans if is_active else 0
+        working_lights = lights if is_active else 0
+        curr_watts = rated_zone_watts if is_active else 0.0
+        
+        z_dict['is_active'] = is_active
+        z_dict['working_fans'] = working_fans
+        z_dict['working_lights'] = working_lights
+        z_dict['rated_zone_watts'] = round(rated_zone_watts, 1)
+        z_dict['current_power_watts'] = round(curr_watts, 1)
+        z_dict['operating_seconds'] = live_sec
+        z_dict['operating_time_formatted'] = format_duration(live_sec)
+        z_dict['energy_kwh'] = round(live_kwh, 4)
+        
+        zones.append(z_dict)
+        
+    conn.close()
+    return zones
+
+def toggle_energy_zone(zone_number: int, target_state: bool = None):
+    """Toggles an energy zone ON/OFF and accumulates operating seconds and kWh."""
+    conn = get_db_connection()
+    check_and_rollover_energy_day(conn)
+    
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM energy_zones WHERE zone_number = ?", (zone_number,))
+    zone = cursor.fetchone()
+    if not zone:
+        conn.close()
+        return None
+        
+    now = datetime.now()
+    current_active = bool(zone['is_active'])
+    new_active = (not current_active) if target_state is None else target_state
+    
+    fp = float(zone['fan_power_watts'])
+    lp = float(zone['light_power_watts'])
+    fans = int(zone['fans_count'])
+    lights = int(zone['lights_count'])
+    rated_zone_watts = (fans * fp) + (lights * lp)
+    
+    tot_sec = int(zone['total_operating_seconds_today'] or 0)
+    tot_kwh = float(zone['total_kwh_today'] or 0.0)
+    
+    if current_active:
+        # Zone was active; calculate elapsed time and add to totals
+        if zone['last_turned_on']:
+            try:
+                last_on_dt = datetime.fromisoformat(zone['last_turned_on'])
+                elapsed = max(0, int((now - last_on_dt).total_seconds()))
+                tot_sec += elapsed
+                tot_kwh += (rated_zone_watts * (elapsed / 3600.0)) / 1000.0
+            except Exception:
+                pass
+                
+    new_last_on = now.isoformat() if new_active else None
+    
+    cursor.execute("""
+    UPDATE energy_zones
+    SET is_active = ?,
+        last_turned_on = ?,
+        total_operating_seconds_today = ?,
+        total_kwh_today = ?,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE zone_number = ?
+    """, (1 if new_active else 0, new_last_on, tot_sec, tot_kwh, zone_number))
+    conn.commit()
+    conn.close()
+    
+    return get_energy_zones_status()
+
+def set_all_zones(state: bool):
+    """Turns all 3 classroom zones ON or OFF simultaneously."""
+    for zn in [1, 2, 3]:
+        toggle_energy_zone(zn, target_state=state)
+    return get_energy_zones_status()
+
+def get_energy_dashboard_metrics():
+    """Calculates live energy consumption, reference baseline, energy saved, costs, and saving %."""
+    zones = get_energy_zones_status()
+    
+    current_power_watts = sum(z['current_power_watts'] for z in zones)
+    max_power_watts = 795.0 # 3 zones * 265 W = 795 W
+    
+    active_count = sum(1 for z in zones if z['is_active'])
+    total_count = len(zones)
+    
+    today_kwh = sum(z['energy_kwh'] for z in zones)
+    
+    # Classroom operating duration today: maximum duration any zone was in use
+    classroom_op_sec = max((z['operating_seconds'] for z in zones), default=0) if zones else 0
+    classroom_op_hours = round(classroom_op_sec / 3600.0, 2)
+    
+    # Reference baseline energy: all 3 zones ON for the same classroom active duration
+    if classroom_op_hours > 0:
+        baseline_kwh = round(0.795 * classroom_op_hours, 3)
+        if baseline_kwh < today_kwh:
+            baseline_kwh = round(today_kwh, 3)
+    else:
+        baseline_kwh = round(today_kwh, 3)
+        
+    saved_kwh = max(0.0, round(baseline_kwh - today_kwh, 3))
+    
+    if baseline_kwh > 0.001:
+        saving_percentage = round((saved_kwh / baseline_kwh) * 100.0, 1)
+    else:
+        saving_percentage = round(((max_power_watts - current_power_watts) / max_power_watts) * 100.0, 1) if max_power_watts > 0 else 0.0
+        
+    today_cost = round(today_kwh * TARIFF_PER_KWH, 2)
+    today_cost_saved = round(saved_kwh * TARIFF_PER_KWH, 2)
+    
+    return {
+        'current_power_watts': round(current_power_watts, 1),
+        'current_power_kw': round(current_power_watts / 1000.0, 3),
+        'max_power_watts': max_power_watts,
+        'max_power_kw': 0.795,
+        'active_zones_count': active_count,
+        'total_zones_count': total_count,
+        'active_zones_ratio': f"{active_count} / {total_count}",
+        'today_kwh': round(today_kwh, 3),
+        'baseline_kwh': round(baseline_kwh, 3),
+        'saved_kwh': round(saved_kwh, 3),
+        'saving_percentage': saving_percentage,
+        'tariff_rate': TARIFF_PER_KWH,
+        'today_cost': today_cost,
+        'today_cost_saved': today_cost_saved,
+        'classroom_op_hours': classroom_op_hours,
+        'classroom_op_formatted': format_duration(classroom_op_sec),
+        'zones': zones
+    }
+
+def get_energy_history(limit: int = 14):
+    """Retrieves historical energy logs ordered by date DESC."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+    SELECT * FROM energy_history
+    ORDER BY date DESC
+    LIMIT ?
+    """, (limit,))
+    rows = [dict(r) for r in cursor.fetchall()]
+    conn.close()
+    return rows
+

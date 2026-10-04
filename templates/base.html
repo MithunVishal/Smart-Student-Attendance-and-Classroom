@@ -102,6 +102,13 @@
           <span>Attendance Reports</span>
         </a>
 
+        <div class="sidebar-heading mt-3">Smart Classroom</div>
+        <a class="nav-link {% if request.path == '/energy' %}active{% endif %}" href="{{ url_for('energy') }}">
+          <i class="bi bi-lightning-charge-fill text-warning"></i>
+          <span>Energy Management</span>
+          <span class="badge bg-warning text-dark rounded-pill ms-auto" style="font-size: 0.65rem;">ECO</span>
+        </a>
+
         <div class="sidebar-heading mt-3">Student Hub</div>
         <a class="nav-link {% if request.path == '/students' %}active{% endif %}" href="{{ url_for('students') }}">
           <i class="bi bi-people-fill text-indigo"></i>
@@ -141,6 +148,13 @@
         <a class="nav-link {% if request.path == '/reports' %}active{% endif %}" href="{{ url_for('reports') }}">
           <i class="bi bi-file-earmark-bar-graph-fill text-primary"></i>
           <span>Attendance Reports</span>
+        </a>
+
+        <div class="sidebar-heading mt-3">Smart Classroom</div>
+        <a class="nav-link {% if request.path == '/energy' %}active{% endif %}" href="{{ url_for('energy') }}">
+          <i class="bi bi-lightning-charge-fill text-warning"></i>
+          <span>Energy Management</span>
+          <span class="badge bg-warning text-dark rounded-pill ms-auto" style="font-size: 0.65rem;">ECO</span>
         </a>
 
         <div class="sidebar-heading mt-3">Student Hub</div>
@@ -189,9 +203,9 @@
         <i class="bi bi-speedometer2"></i>
         <span>Dashboard</span>
       </a>
-      <a href="{{ url_for('students') }}" class="mobile-nav-item {% if request.path == '/students' %}active{% endif %}">
-        <i class="bi bi-people-fill"></i>
-        <span>Students</span>
+      <a href="{{ url_for('energy') }}" class="mobile-nav-item {% if request.path == '/energy' %}active{% endif %}">
+        <i class="bi bi-lightning-charge-fill text-warning"></i>
+        <span>Energy</span>
       </a>
       <!-- Elevated Center Scan Button -->
       <a href="{{ url_for('scanner') }}" class="mobile-nav-item scan-primary" title="Launch Scanner">
@@ -201,9 +215,9 @@
         <i class="bi bi-calendar2-check-fill"></i>
         <span>Records</span>
       </a>
-      <a href="{{ url_for('reports') }}" class="mobile-nav-item {% if request.path == '/reports' %}active{% endif %}">
-        <i class="bi bi-file-earmark-bar-graph-fill"></i>
-        <span>Reports</span>
+      <a href="{{ url_for('students') }}" class="mobile-nav-item {% if request.path == '/students' %}active{% endif %}">
+        <i class="bi bi-people-fill"></i>
+        <span>Students</span>
       </a>
     </div>
   </nav>

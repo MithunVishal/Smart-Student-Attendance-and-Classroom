@@ -114,6 +114,32 @@
   </div>
 </div>
 
+<!-- Energy & Smart Classroom Quick Banner -->
+<div class="iris-card p-3 mb-4 bg-light border border-primary-subtle shadow-sm">
+  <div class="d-flex flex-column flex-md-row align-items-md-center justify-content-between gap-3">
+    <div class="d-flex align-items-center gap-3">
+      <div class="bg-warning-subtle text-warning rounded-3 p-2 d-flex align-items-center justify-content-center" style="width: 48px; height: 48px;">
+        <i class="bi bi-lightning-charge-fill fs-3 text-warning"></i>
+      </div>
+      <div>
+        <div class="d-flex align-items-center gap-2">
+          <h6 class="fw-bold text-dark mb-0">Smart Energy Management</h6>
+          <span class="badge bg-success-subtle text-success border border-success-subtle rounded-pill">Active Optimization</span>
+        </div>
+        <div class="small text-muted">
+          Classroom 3-Zone Load: <strong>3 Fans (75W) + 2 Lights (20W)</strong> per zone &bull; Reference Max: <strong>795 W</strong>
+        </div>
+      </div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <a href="{{ url_for('energy') }}" class="btn btn-primary btn-sm rounded-pill px-3 fw-semibold shadow-sm d-flex align-items-center gap-1">
+        <i class="bi bi-sliders"></i>
+        <span>Manage 3 Zones</span>
+      </a>
+    </div>
+  </div>
+</div>
+
 <!-- Analytics Charts Row -->
 <div class="row g-3 mb-4">
   <!-- Chart 1: Department Attendance Breakdown -->

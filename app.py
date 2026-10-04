@@ -13,7 +13,8 @@ from config import Config
 from database import (
     init_db, get_db_connection, get_dashboard_stats,
     get_attendance_records, get_all_students, record_attendance_scan,
-    create_sample_avatar
+    create_sample_avatar, get_energy_zones_status, toggle_energy_zone,
+    set_all_zones, get_energy_dashboard_metrics, get_energy_history
 )
 from scanner import decode_base64_image, scan_barcodes_from_image, decode_barcode_from_file_bytes
 from reports import export_to_csv, export_to_excel, export_to_pdf
@@ -496,6 +497,65 @@ def export_report(format_type):
     else:
         flash("Invalid export format specified.", "danger")
         return redirect(url_for('reports'))
+
+# ==========================================
+# ENERGY MANAGEMENT & CLASSROOM EFFICIENCY
+# ==========================================
+
+@app.route('/energy')
+@login_required
+def energy():
+    metrics = get_energy_dashboard_metrics()
+    history = get_energy_history()
+    return render_template(
+        'energy.html',
+        metrics=metrics,
+        zones=metrics['zones'],
+        history=history,
+        active_page='energy'
+    )
+
+@app.route('/api/energy/toggle', methods=['POST'])
+@login_required
+def api_energy_toggle():
+    data = request.get_json() or {}
+    zone_number = data.get('zone_number')
+    target_state = data.get('state') # Optional boolean
+    
+    if not zone_number or int(zone_number) not in [1, 2, 3]:
+        return jsonify({'success': False, 'message': 'Invalid zone number. Must be 1, 2, or 3.'}), 400
+        
+    toggle_energy_zone(int(zone_number), target_state=target_state)
+    metrics = get_energy_dashboard_metrics()
+    return jsonify({
+        'success': True,
+        'metrics': metrics,
+        'zones': metrics['zones']
+    })
+
+@app.route('/api/energy/toggle_all', methods=['POST'])
+@login_required
+def api_energy_toggle_all():
+    data = request.get_json() or {}
+    target_state = bool(data.get('state', True))
+    
+    set_all_zones(state=target_state)
+    metrics = get_energy_dashboard_metrics()
+    return jsonify({
+        'success': True,
+        'metrics': metrics,
+        'zones': metrics['zones']
+    })
+
+@app.route('/api/energy/status', methods=['GET'])
+@login_required
+def api_energy_status():
+    metrics = get_energy_dashboard_metrics()
+    return jsonify({
+        'success': True,
+        'metrics': metrics,
+        'zones': metrics['zones']
+    })
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))

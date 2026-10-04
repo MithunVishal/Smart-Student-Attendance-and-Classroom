@@ -627,3 +627,195 @@ body {
     margin: 20px auto;
   }
 }
+
+/* ==========================================
+   ENERGY MANAGEMENT STYLES & ANIMATIONS
+   ========================================== */
+.zone-card {
+  border-radius: var(--radius-lg);
+  background: #ffffff;
+  border: 2px solid #e2e8f0;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  overflow: hidden;
+  position: relative;
+}
+
+.zone-card.zone-active {
+  border-color: #3b82f6;
+  box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.15), 0 8px 10px -6px rgba(59, 130, 246, 0.1);
+}
+
+.zone-card.zone-inactive {
+  opacity: 0.85;
+  background: #fafbfc;
+  border-color: #e2e8f0;
+}
+
+.zone-header-strip {
+  padding: 12px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.zone-card.zone-active .zone-header-strip {
+  background: linear-gradient(90deg, #eff6ff 0%, #ffffff 100%);
+}
+
+.zone-card.zone-inactive .zone-header-strip {
+  background: #f8fafc;
+}
+
+/* Fan Spinning Animation */
+@keyframes spinFan {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.appliance-icon-fan {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.appliance-icon-fan.active {
+  background-color: #e0f2fe;
+  color: #0284c7;
+  animation: spinFan 1.2s linear infinite;
+  box-shadow: 0 0 10px rgba(2, 132, 199, 0.25);
+}
+
+.appliance-icon-fan.inactive {
+  background-color: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* Light Glowing Animation */
+@keyframes glowLight {
+  0%, 100% { box-shadow: 0 0 8px rgba(234, 179, 8, 0.5); filter: drop-shadow(0 0 6px rgba(234, 179, 8, 0.8)); }
+  50% { box-shadow: 0 0 16px rgba(234, 179, 8, 0.8); filter: drop-shadow(0 0 10px rgba(234, 179, 8, 1)); }
+}
+
+.appliance-icon-light {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  font-size: 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.appliance-icon-light.active {
+  background-color: #fef9c3;
+  color: #ca8a04;
+  animation: glowLight 2s ease-in-out infinite;
+}
+
+.appliance-icon-light.inactive {
+  background-color: #f1f5f9;
+  color: #94a3b8;
+}
+
+/* Big Interactive Switch Button */
+.btn-zone-toggle {
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 50px;
+  padding: 8px 24px;
+  transition: all 0.25s ease;
+}
+
+.btn-zone-toggle.btn-turn-off {
+  background-color: #ef4444;
+  border-color: #ef4444;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(239, 68, 68, 0.3);
+}
+
+.btn-zone-toggle.btn-turn-off:hover {
+  background-color: #dc2626;
+  box-shadow: 0 6px 16px rgba(239, 68, 68, 0.4);
+}
+
+.btn-zone-toggle.btn-turn-on {
+  background-color: #10b981;
+  border-color: #10b981;
+  color: #ffffff;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.btn-zone-toggle.btn-turn-on:hover {
+  background-color: #059669;
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+}
+
+/* Digital Power Counter Pill */
+.power-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-weight: 700;
+  font-size: 0.85rem;
+}
+
+.power-pill.active {
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.power-pill.inactive {
+  background-color: #f1f5f9;
+  color: #64748b;
+  border: 1px solid #e2e8f0;
+}
+
+/* Pulsing Online Dot */
+.live-pulse {
+  display: inline-block;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background-color: #10b981;
+  box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+  animation: pulseGreen 1.6s infinite;
+}
+
+@keyframes pulseGreen {
+  0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7); }
+  70% { transform: scale(1); box-shadow: 0 0 0 8px rgba(16, 185, 129, 0); }
+  100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+/* Zone Floorplan Overview */
+.classroom-floorplan {
+  background: linear-gradient(180deg, #f8fafc 0%, #edf2f7 100%);
+  border: 2px dashed #cbd5e1;
+  border-radius: 16px;
+  padding: 16px;
+  position: relative;
+}
+
+.blackboard-badge {
+  background: #1e293b;
+  color: #ffffff;
+  padding: 4px 20px;
+  border-radius: 4px;
+  font-size: 0.78rem;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  font-weight: 700;
+  display: inline-block;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.15);
+}
+

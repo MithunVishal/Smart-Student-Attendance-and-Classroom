@@ -134,5 +134,53 @@ class TestAttendanceSystem(unittest.TestCase):
         self.assertEqual(pdf_res.status_code, 200)
         self.assertTrue(pdf_res.data.startswith(b'%PDF'))
 
+    def test_energy_management(self):
+        """Test the 3-zone energy management, manual toggle, calculations, and web routes."""
+        # 1. Login
+        self.client.post('/login', data={'username': 'admin', 'password': 'admin123'})
+        
+        # 2. Get /energy page
+        res = self.client.get('/energy')
+        self.assertEqual(res.status_code, 200)
+        self.assertIn(b'Classroom Energy Management', res.data)
+        self.assertIn(b'Zone 1', res.data)
+        self.assertIn(b'Zone 2', res.data)
+        self.assertIn(b'Zone 3', res.data)
+        self.assertIn(b'795 W', res.data) # Reference Max
+        
+        # 3. Test /api/energy/status
+        status_res = self.client.get('/api/energy/status')
+        self.assertEqual(status_res.status_code, 200)
+        status_data = status_res.get_json()
+        self.assertTrue(status_data['success'])
+        self.assertEqual(len(status_data['zones']), 3)
+        self.assertEqual(status_data['metrics']['max_power_watts'], 795.0)
+        
+        # 4. Test turning all zones OFF
+        toggle_off = self.client.post('/api/energy/toggle_all', json={'state': False})
+        self.assertEqual(toggle_off.status_code, 200)
+        data_off = toggle_off.get_json()
+        self.assertEqual(data_off['metrics']['current_power_watts'], 0.0)
+        self.assertEqual(data_off['metrics']['active_zones_count'], 0)
+        
+        # 5. Test turning Zone 1 ON (3 fans * 75W + 2 lights * 20W = 265W)
+        toggle_z1 = self.client.post('/api/energy/toggle', json={'zone_number': 1, 'state': True})
+        self.assertEqual(toggle_z1.status_code, 200)
+        data_z1 = toggle_z1.get_json()
+        self.assertEqual(data_z1['metrics']['current_power_watts'], 265.0)
+        self.assertEqual(data_z1['metrics']['active_zones_count'], 1)
+        z1 = [z for z in data_z1['zones'] if z['zone_number'] == 1][0]
+        self.assertEqual(z1['working_fans'], 3)
+        self.assertEqual(z1['working_lights'], 2)
+        self.assertEqual(z1['current_power_watts'], 265.0)
+        
+        # 6. Test turning All zones ON (795W)
+        toggle_all = self.client.post('/api/energy/toggle_all', json={'state': True})
+        self.assertEqual(toggle_all.status_code, 200)
+        data_all = toggle_all.get_json()
+        self.assertEqual(data_all['metrics']['current_power_watts'], 795.0)
+        self.assertEqual(data_all['metrics']['active_zones_count'], 3)
+
 if __name__ == '__main__':
     unittest.main()
+
